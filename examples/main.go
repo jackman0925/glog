@@ -1,8 +1,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/jackman0925/glog"
 )
 
