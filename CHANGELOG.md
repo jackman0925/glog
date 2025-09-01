@@ -1,0 +1,31 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.0.0] - 2025-09-01
+
+### Added
+- Initial version of the `glog` library.
+- Default logger that writes to the console out-of-the-box.
+- `Init` function to initialize a global logger from a YAML config file.
+- `New` function to create a new logger instance from a YAML config file.
+- Support for `console` and `json` encoders.
+- Log rotation using `lumberjack`.
+- `logger.yaml.example` as a configuration template.
+- `examples/main.go` to demonstrate usage.
+- Unit tests with 72% coverage.
+- `go.mod` for dependency management.
+
+### Changed
+- Refactored the library to be more robust and modular.
+- `Init` and `New` functions now return an error instead of panicking.
+- Updated import paths to `github.com/jackman0925/glog`.
+
+### Fixed
+- Corrected caller reporting using `zap.AddCallerSkip(1)`.
+- Used more secure file permissions (0755) when creating directories.
