@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# mac os
+.DS_Store
+**/.DS_Store
+.DS_Store?

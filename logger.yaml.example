@@ -1,0 +1,27 @@
+# zap logger configuration
+
+# encoder: console or json
+encoder: console
+# path: log file path
+path: ./logs/
+# directory: log file directory
+directory: glog
+# show_line: show file and line number
+show_line: true
+# encode_level: Lowercase, LowercaseColor, Capital, CapitalColor
+encode_level: CapitalColor
+# stacktrace_key: stacktrace key
+stacktrace_key: stack
+# log_stdout: log to stdout
+log_stdout: true
+
+# segment: log rotation
+segment:
+  # max_size: max size of log file before rotation (MB)
+  max_size: 10
+  # max_age: max age of log file before rotation (days)
+  max_age: 7
+  # max_backups: max number of backups
+  max_backups: 10
+  # compress: compress rotated log files
+  compress: true
