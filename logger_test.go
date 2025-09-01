@@ -1,7 +1,6 @@
 package glog
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +9,7 @@ import (
 
 func TestFileLogging(t *testing.T) {
 	// Create a temporary directory for logs
-	tempDir, err := ioutil.TempDir("", "glog_test")
+	tempDir, err := os.MkdirTemp("", "glog_test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -31,7 +30,7 @@ segment:
   compress: false
 `
 	configPath := filepath.Join(tempDir, "logger.yaml")
-	if err := ioutil.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
@@ -51,7 +50,7 @@ segment:
 
 func TestNewLogger(t *testing.T) {
 	// Create a temporary directory for logs
-	tempDir, err := ioutil.TempDir("", "glog_test_new")
+	tempDir, err := os.MkdirTemp("", "glog_test_new")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -72,7 +71,7 @@ segment:
   compress: false
 `
 	configPath := filepath.Join(tempDir, "logger.yaml")
-	if err := ioutil.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
@@ -97,7 +96,7 @@ func TestInitError(t *testing.T) {
 }
 
 func checkLogFile(t *testing.T, filePath, level, message string) {
-	content, err := ioutil.ReadFile(filePath)
+	content, err := os.ReadFile(filePath)
 	if err != nil {
 		t.Fatalf("Failed to read log file %s: %v", filePath, err)
 	}
