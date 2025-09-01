@@ -11,7 +11,7 @@ show_line: true
 # encode_level: Lowercase, LowercaseColor, Capital, CapitalColor
 encode_level: CapitalColor
 # stacktrace_key: stacktrace key
-stacktrace_key: stack
+stacktrace_key: stacktrace
 # log_stdout: log to stdout
 log_stdout: true
 
@@ -22,6 +22,6 @@ segment:
   # max_age: max age of log file before rotation (days)
   max_age: 7
   # max_backups: max number of backups
-  max_backups: 10
+  max_backups: 500
   # compress: compress rotated log files
   compress: true
