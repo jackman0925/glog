@@ -247,6 +247,10 @@ func Panic(args ...interface{}) {
 	xLog.Panic(args...)
 }
 
+func Printf(template string, args ...interface{}) {
+	xLog.Infof(template, args...)
+}
+
 // panicRedirect redirects panics to a file.
 func panicRedirect(logFile string) {
 	// This is a simplified panic redirect. In a real-world scenario,

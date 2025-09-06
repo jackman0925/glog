@@ -95,6 +95,48 @@ func TestInitError(t *testing.T) {
 	}
 }
 
+func TestPrintf(t *testing.T) {
+	// Create a temporary directory for logs
+	tempDir, err := os.MkdirTemp("", "glog_test_printf")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a logger.yaml file
+	configContent := `
+encoder: console
+path: ""
+directory: ""
+show_line: false
+encode_level: Capital
+log_stdout: false
+segment:
+  max_size: 10
+  max_age: 7
+  max_backups: 10
+  compress: false
+`
+	configPath := filepath.Join(tempDir, "logger.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Initialize the logger
+	if err := Init(configPath, tempDir); err != nil {
+		t.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	// Test Printf with formatted message
+	username := "testuser"
+	loginTime := "2024-01-01 12:00:00"
+	Printf("用户 %s 登录成功，时间: %s", username, loginTime)
+
+	// Check if log file was created and contains the formatted message
+	expectedMessage := "用户 testuser 登录成功，时间: 2024-01-01 12:00:00"
+	checkLogFile(t, filepath.Join(tempDir, FileInfo), "INFO", expectedMessage)
+}
+
 func checkLogFile(t *testing.T, filePath, level, message string) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
