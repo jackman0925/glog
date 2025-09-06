@@ -8,6 +8,8 @@ path: ./logs/
 directory: glog
 # show_line: show file and line number
 show_line: true
+# show_goroutine: show goroutine ID
+show_goroutine: true
 # encode_level: Lowercase, LowercaseColor, Capital, CapitalColor
 encode_level: CapitalColor
 # stacktrace_key: stacktrace key

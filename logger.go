@@ -3,6 +3,8 @@ package glog
 import (
 	"fmt"
 	"os"
+	"runtime"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -33,6 +35,7 @@ type Config struct {
 	Path          string  `yaml:"path"`
 	Directory     string  `yaml:"directory"`
 	ShowLine      bool    `yaml:"show_line"`
+	ShowGoroutine bool    `yaml:"show_goroutine"`
 	EncodeLevel   string  `yaml:"encode_level"`
 	StacktraceKey string  `yaml:"stacktrace_key"`
 	LogStdout     bool    `yaml:"log_stdout"`
@@ -48,7 +51,8 @@ type Segment struct {
 }
 
 var (
-	xLog *zap.SugaredLogger
+	xLog          *zap.SugaredLogger
+	showGoroutine bool
 )
 
 // Logger wraps zap.SugaredLogger to provide additional methods
@@ -60,6 +64,22 @@ func init() {
 	// Default logger
 	logger, _ := zap.NewDevelopment()
 	xLog = logger.Sugar()
+}
+
+// getGoroutineID returns the current goroutine ID
+func getGoroutineID() string {
+	buf := make([]byte, 64)
+	buf = buf[:runtime.Stack(buf, false)]
+	// Extract goroutine ID from stack trace
+	// Format: "goroutine 123 [running]:"
+	stackStr := string(buf)
+	if idx := strings.Index(stackStr, "goroutine "); idx != -1 {
+		start := idx + len("goroutine ")
+		if end := strings.Index(stackStr[start:], " "); end != -1 {
+			return stackStr[start : start+end]
+		}
+	}
+	return "unknown"
 }
 
 // Init initializes a new logger with the given config file path and directory.
@@ -76,6 +96,7 @@ func Init(cfgPath string, directory string) error {
 		return err
 	}
 	xLog = logger
+	showGoroutine = cfg.ShowGoroutine
 	return nil
 }
 
@@ -238,39 +259,93 @@ func customTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 }
 
 func Debug(args ...interface{}) {
-	xLog.Debug(args...)
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Debug(args...)
+		} else {
+			xLog.Debug(args...)
+		}
+	}
 }
 
 func Info(args ...interface{}) {
-	xLog.Info(args...)
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Info(args...)
+		} else {
+			xLog.Info(args...)
+		}
+	}
 }
 
 func Infof(template string, args ...interface{}) {
-	xLog.Infof(template, args...)
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Infof(template, args...)
+		} else {
+			xLog.Infof(template, args...)
+		}
+	}
 }
 
 func Warn(args ...interface{}) {
-	xLog.Warn(args...)
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Warn(args...)
+		} else {
+			xLog.Warn(args...)
+		}
+	}
 }
 
 func Warnf(format string, args ...interface{}) {
-	xLog.Warnf(format, args...)
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Warnf(format, args...)
+		} else {
+			xLog.Warnf(format, args...)
+		}
+	}
 }
 
 func Error(args ...interface{}) {
-	xLog.Error(args...)
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Error(args...)
+		} else {
+			xLog.Error(args...)
+		}
+	}
 }
 
 func Errorf(template string, args ...interface{}) {
-	xLog.Errorf(template, args...)
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Errorf(template, args...)
+		} else {
+			xLog.Errorf(template, args...)
+		}
+	}
 }
 
 func Panic(args ...interface{}) {
-	xLog.Panic(args...)
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Panic(args...)
+		} else {
+			xLog.Panic(args...)
+		}
+	}
 }
 
 func Printf(template string, args ...interface{}) {
-	xLog.Infof(template, args...)
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Infof(template, args...)
+		} else {
+			xLog.Infof(template, args...)
+		}
+	}
 }
 
 // Printf formats and logs a message at Info level
