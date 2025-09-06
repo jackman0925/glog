@@ -1,0 +1,13 @@
+
+encoder: console
+path: ""
+directory: ""
+show_line: true
+show_goroutine: true
+encode_level: CapitalColor
+log_stdout: true
+segment:
+  max_size: 10
+  max_age: 7
+  max_backups: 10
+  compress: false

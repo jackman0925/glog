@@ -27,4 +27,15 @@ func main() {
 		}
 		logger.Info("This is a message from a new logger instance.")
 	*/
+
+	// Create a new Logger instance with Printf support
+	// Create a logger.yaml file first
+	/*
+		logger, err := glog.NewLogger("logger.yaml", "my-other-app")
+		if err != nil {
+			log.Fatalf("failed to create logger: %v", err)
+		}
+		logger.Info("This is a message from a new logger instance.")
+		logger.Printf("This is a %s message from the new logger instance.", "formatted")
+	*/
 }
