@@ -51,6 +51,11 @@ var (
 	xLog *zap.SugaredLogger
 )
 
+// Logger wraps zap.SugaredLogger to provide additional methods
+type Logger struct {
+	*zap.SugaredLogger
+}
+
 func init() {
 	// Default logger
 	logger, _ := zap.NewDevelopment()
@@ -82,6 +87,23 @@ func New(cfgPath string, directory string) (*zap.SugaredLogger, error) {
 	}
 	cfg.Directory = directory
 	return newLogger(cfg)
+}
+
+// NewLogger creates a new Logger instance with the given config file path and directory.
+// This returns a Logger wrapper that supports Printf method.
+func NewLogger(cfgPath string, directory string) (*Logger, error) {
+	cfg := &Config{}
+	if err := yamlToStruct(cfgPath, cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+	cfg.Directory = directory
+
+	sugaredLogger, err := newLogger(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Logger{SugaredLogger: sugaredLogger}, nil
 }
 
 func yamlToStruct(file string, out interface{}) (err error) {
@@ -249,6 +271,11 @@ func Panic(args ...interface{}) {
 
 func Printf(template string, args ...interface{}) {
 	xLog.Infof(template, args...)
+}
+
+// Printf formats and logs a message at Info level
+func (l *Logger) Printf(template string, args ...interface{}) {
+	l.Infof(template, args...)
 }
 
 // panicRedirect redirects panics to a file.
