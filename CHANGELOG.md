@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [released]
 
+## [0.0.2] - 2025-09-06
+
+### Added
+- `Printf` function for formatted logging similar to `fmt.Printf`
+- `Logger` wrapper type that embeds `*zap.SugaredLogger` with additional methods
+- `NewLogger` function to create Logger instances with Printf support
+- `Logger.Printf` method for formatted logging on Logger instances
+- Goroutine ID support similar to Java thread ID logging
+- `show_goroutine` configuration option to enable/disable goroutine ID in logs
+- `getGoroutineID()` function to extract goroutine ID from runtime stack
+- Unit tests for both global `Printf` and `Logger.Printf` methods
+- Unit test for goroutine ID functionality
+- `examples/goroutine_demo.go` demonstrating concurrent logging with goroutine IDs
+
 ## [0.0.1] - 2025-09-01
 
 ### Added
