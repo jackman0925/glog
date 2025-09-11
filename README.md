@@ -91,9 +91,12 @@ The following options are available in the `logger.yaml` file:
 *   `path`: Log file path.
 *   `directory`: Log file directory.
 *   `show_line`: Show file and line number (`true` or `false`).
+*   `show_goroutine`: Show goroutine ID (`true` or `false`).
 *   `encode_level`: `Lowercase`, `LowercaseColor`, `Capital`, `CapitalColor`.
 *   `stacktrace_key`: Stacktrace key.
 *   `log_stdout`: Log to stdout (`true` or `false`).
+*   `high_performance`: Enable high performance mode (`true` or `false`). When enabled, reduces features for better performance.
+*   `separate_levels`: Separate log levels to different files (`true` or `false`). When disabled, logs all levels to a single file for better performance.
 *   `segment`:
     *   `max_size`: Max size of log file before rotation (MB).
     *   `max_age`: Max age of log file before rotation (days).

@@ -16,6 +16,10 @@ encode_level: CapitalColor
 stacktrace_key: stacktrace
 # log_stdout: log to stdout
 log_stdout: true
+# high_performance: enable high performance mode (reduces features for better performance)
+high_performance: false
+# separate_levels: separate log levels to different files (set to false for better performance)
+separate_levels: true
 
 # segment: log rotation
 segment:

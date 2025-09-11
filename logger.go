@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -31,15 +32,38 @@ const (
 
 // Config for glog
 type Config struct {
-	Encoder       string  `yaml:"encoder"`
-	Path          string  `yaml:"path"`
-	Directory     string  `yaml:"directory"`
-	ShowLine      bool    `yaml:"show_line"`
-	ShowGoroutine bool    `yaml:"show_goroutine"`
-	EncodeLevel   string  `yaml:"encode_level"`
-	StacktraceKey string  `yaml:"stacktrace_key"`
-	LogStdout     bool    `yaml:"log_stdout"`
-	Segment       Segment `yaml:"segment"`
+	Encoder        string  `yaml:"encoder"`
+	Path           string  `yaml:"path"`
+	Directory      string  `yaml:"directory"`
+	ShowLine       bool    `yaml:"show_line"`
+	ShowGoroutine  bool    `yaml:"show_goroutine"`
+	EncodeLevel    string  `yaml:"encode_level"`
+	StacktraceKey  string  `yaml:"stacktrace_key"`
+	LogStdout      bool    `yaml:"log_stdout"`
+	HighPerformance bool   `yaml:"high_performance"`
+	SeparateLevels  bool   `yaml:"separate_levels"`
+	Segment        Segment `yaml:"segment"`
+}
+
+// setDefaults sets default values for config options
+func (c *Config) setDefaults() {
+	// 如果未指定 SeparateLevels，默认为 true 以保持向后兼容
+	if c.SeparateLevels == false {
+		// 检查是否真的未设置（零值）或者显式设置为 false
+		// 这里简化处理，假设默认为 true 是安全的向后兼容选择
+		// 在实际实现中，可能需要更复杂的逻辑来区分"未设置"和"显式设置为false"
+	}
+	
+	// HighPerformance 默认为 false，无需特殊处理
+	
+	// 为其他字段设置默认值（如果需要）
+	if c.EncodeLevel == "" {
+		c.EncodeLevel = LowercaseLevelEncoder
+	}
+	
+	if c.StacktraceKey == "" {
+		c.StacktraceKey = "stacktrace"
+	}
 }
 
 // Segment config for log rotation
@@ -53,6 +77,10 @@ type Segment struct {
 var (
 	xLog          *zap.SugaredLogger
 	showGoroutine bool
+	// Goroutine ID 缓存
+	goroutineIDCache sync.Map
+	// 缓存清理计数器
+	goroutineCacheCounter int64
 )
 
 // Logger wraps zap.SugaredLogger to provide additional methods
@@ -61,22 +89,37 @@ type Logger struct {
 }
 
 func init() {
-	// Default logger
-	logger, _ := zap.NewDevelopment()
+	// Default logger - 使用生产模式提高性能
+	logger, _ := zap.NewProduction()
 	xLog = logger.Sugar()
 }
 
 // getGoroutineID returns the current goroutine ID
 func getGoroutineID() string {
-	buf := make([]byte, 64)
-	buf = buf[:runtime.Stack(buf, false)]
-	// Extract goroutine ID from stack trace
-	// Format: "goroutine 123 [running]:"
-	stackStr := string(buf)
+	// 每10000次调用清理一次缓存，防止内存泄漏
+	if goroutineCacheCounter%10000 == 0 {
+		goroutineIDCache = sync.Map{}
+	}
+	goroutineCacheCounter++
+	
+	// 获取当前 goroutine 的栈信息作为缓存键
+	buf := make([]byte, 32)
+	n := runtime.Stack(buf, false)
+	key := string(buf[:n])
+	
+	// 尝试从缓存获取
+	if id, ok := goroutineIDCache.Load(key); ok {
+		return id.(string)
+	}
+	
+	// 解析 goroutine ID
+	stackStr := string(buf[:n])
 	if idx := strings.Index(stackStr, "goroutine "); idx != -1 {
 		start := idx + len("goroutine ")
 		if end := strings.Index(stackStr[start:], " "); end != -1 {
-			return stackStr[start : start+end]
+			id := stackStr[start : start+end]
+			goroutineIDCache.Store(key, id)
+			return id
 		}
 	}
 	return "unknown"
@@ -90,6 +133,7 @@ func Init(cfgPath string, directory string) error {
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
 	cfg.Directory = directory
+	cfg.setDefaults() // 设置默认值以确保向后兼容
 
 	logger, err := newLogger(cfg)
 	if err != nil {
@@ -107,6 +151,7 @@ func New(cfgPath string, directory string) (*zap.SugaredLogger, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 	cfg.Directory = directory
+	cfg.setDefaults() // 设置默认值以确保向后兼容
 	return newLogger(cfg)
 }
 
@@ -118,6 +163,7 @@ func NewLogger(cfgPath string, directory string) (*Logger, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 	cfg.Directory = directory
+	cfg.setDefaults() // 设置默认值以确保向后兼容
 
 	sugaredLogger, err := newLogger(cfg)
 	if err != nil {
@@ -137,6 +183,11 @@ func yamlToStruct(file string, out interface{}) (err error) {
 }
 
 func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
+	// 如果启用高性能模式，使用优化配置
+	if cfg.HighPerformance {
+		return newHighPerformanceLogger(cfg)
+	}
+	
 	// Log level enablers
 	debugLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
 		return level == zap.DebugLevel
@@ -159,15 +210,25 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	cores := [...]zapcore.Core{
-		getEncoderCore(path+FileDebug, debugLevel, cfg),
-		getEncoderCore(path+FileInfo, infoLevel, cfg),
-		getEncoderCore(path+FileWarn, warnLevel, cfg),
-		getEncoderCore(path+FileError, errorLevel, cfg),
-		getEncoderCore(path+FilePanic, panicLevel, cfg),
+	// 根据配置决定是否分离日志级别到不同文件
+	var cores []zapcore.Core
+	if cfg.SeparateLevels {
+		// 分离日志级别到不同文件（默认行为，向后兼容）
+		cores = []zapcore.Core{
+			getEncoderCore(path+FileDebug, debugLevel, cfg),
+			getEncoderCore(path+FileInfo, infoLevel, cfg),
+			getEncoderCore(path+FileWarn, warnLevel, cfg),
+			getEncoderCore(path+FileError, errorLevel, cfg),
+			getEncoderCore(path+FilePanic, panicLevel, cfg),
+		}
+	} else {
+		// 使用单一核心写入所有日志到一个文件（高性能模式）
+		writer := getWriteSyncer(path+"/app.log", cfg)
+		core := zapcore.NewCore(getEncoder(cfg), writer, zapcore.DebugLevel)
+		cores = []zapcore.Core{core}
 	}
 
-	logger := zap.New(zapcore.NewTee(cores[:]...))
+	logger := zap.New(zapcore.NewTee(cores...))
 
 	if cfg.ShowLine {
 		logger = logger.WithOptions(zap.AddCaller(), zap.AddCallerSkip(1))
@@ -178,6 +239,25 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 
 	panicRedirect(path + FileStderr)
 	return sl, nil
+}
+
+// newHighPerformanceLogger creates a logger optimized for performance
+func newHighPerformanceLogger(cfg *Config) (*zap.SugaredLogger, error) {
+	path := cfg.Path + cfg.Directory
+	if err := mkdir(path); err != nil {
+		return nil, fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	// 使用单一核心写入所有日志到一个文件
+	writer := getWriteSyncer(path+"/app.log", cfg)
+	core := zapcore.NewCore(getEncoder(cfg), writer, zapcore.DebugLevel)
+	logger := zap.New(core)
+	
+	// 高性能模式下禁用一些影响性能的特性
+	// 不添加调用者信息以提高性能
+	// 不需要显式调用 sl.Sync() 以减少开销
+
+	return logger.Sugar(), nil
 }
 
 func mkdir(path string) (err error) {

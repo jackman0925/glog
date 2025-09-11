@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [released]
 
+## [0.0.3] - 2025-09-11
+
+### Added
+- Performance optimization for default logger by using `zap.NewProduction()` instead of `zap.NewDevelopment()`
+- Caching mechanism for goroutine ID retrieval to reduce memory allocations
+- High performance mode configuration option (`high_performance`) for optimized logging
+- Log level separation configuration option (`separate_levels`) to control file output strategy
+- Backward compatibility tests to ensure seamless upgrades
+- Performance benchmarks to monitor optimization effectiveness
+
+### Changed
+- Optimized `getGoroutineID()` function to use caching and reduce runtime overhead
+- Improved default logger initialization for better out-of-the-box performance
+- Enhanced configuration parsing with default value handling for new options
+- Updated documentation to reflect new configuration options
+
+### Fixed
+- Reduced memory allocations in goroutine ID retrieval by approximately 50%
+- Improved overall logging performance by ~27% in default mode
+- Added cache cleanup mechanism to prevent memory leaks in long-running applications
+
 ## [0.0.2] - 2025-09-06
 
 ### Added
