@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [released]
 
+## [1.0.0] - 2025-09-13
+### Added
+- Log level filtering via the `log_level` option in the configuration file (e.g., "info", "warn", "error").
+
+### Fixed
+- Ensured backward compatibility for configurations without the new `log_level` option by defaulting to the `info` level.
+- Corrected an issue where existing tests failed due to the new `separate_levels` flag. The logger now correctly defaults to separating files by level (`separate_levels: true`) to maintain backward compatibility.
+
 ## [0.0.3] - 2025-09-11
 
 ### Added
