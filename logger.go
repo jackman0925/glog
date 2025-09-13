@@ -42,6 +42,7 @@ type Config struct {
 	LogStdout      bool    `yaml:"log_stdout"`
 	HighPerformance bool   `yaml:"high_performance"`
 	SeparateLevels  bool   `yaml:"separate_levels"`
+	LogLevel       string  `yaml:"log_level"`
 	Segment        Segment `yaml:"segment"`
 }
 
@@ -128,7 +129,7 @@ func getGoroutineID() string {
 // Init initializes a new logger with the given config file path and directory.
 // This will replace the default logger.
 func Init(cfgPath string, directory string) error {
-	cfg := &Config{}
+	cfg := &Config{SeparateLevels: true}
 	if err := yamlToStruct(cfgPath, cfg); err != nil {
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
@@ -146,7 +147,7 @@ func Init(cfgPath string, directory string) error {
 
 // New creates a new logger with the given config file path and directory.
 func New(cfgPath string, directory string) (*zap.SugaredLogger, error) {
-	cfg := &Config{}
+	cfg := &Config{SeparateLevels: true}
 	if err := yamlToStruct(cfgPath, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
@@ -158,7 +159,7 @@ func New(cfgPath string, directory string) (*zap.SugaredLogger, error) {
 // NewLogger creates a new Logger instance with the given config file path and directory.
 // This returns a Logger wrapper that supports Printf method.
 func NewLogger(cfgPath string, directory string) (*Logger, error) {
-	cfg := &Config{}
+	cfg := &Config{SeparateLevels: true}
 	if err := yamlToStruct(cfgPath, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
@@ -188,22 +189,8 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 		return newHighPerformanceLogger(cfg)
 	}
 	
-	// Log level enablers
-	debugLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
-		return level == zap.DebugLevel
-	})
-	infoLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
-		return level == zap.InfoLevel
-	})
-	warnLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
-		return level == zap.WarnLevel
-	})
-	errorLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
-		return level == zap.ErrorLevel
-	})
-	panicLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
-		return level >= zap.DPanicLevel
-	})
+	// 解析日志级别
+	logLevel := parseLogLevel(cfg.LogLevel)
 
 	path := cfg.Path + cfg.Directory
 	if err := mkdir(path); err != nil {
@@ -214,6 +201,23 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 	var cores []zapcore.Core
 	if cfg.SeparateLevels {
 		// 分离日志级别到不同文件（默认行为，向后兼容）
+		// 为每个级别创建核心，但使用日志级别过滤器
+		debugLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
+			return level == zap.DebugLevel && logLevel <= level
+		})
+		infoLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
+			return level == zap.InfoLevel && logLevel <= level
+		})
+		warnLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
+			return level == zap.WarnLevel && logLevel <= level
+		})
+		errorLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
+			return level == zap.ErrorLevel && logLevel <= level
+		})
+		panicLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
+			return level >= zap.DPanicLevel && logLevel <= level
+		})
+
 		cores = []zapcore.Core{
 			getEncoderCore(path+FileDebug, debugLevel, cfg),
 			getEncoderCore(path+FileInfo, infoLevel, cfg),
@@ -224,7 +228,7 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 	} else {
 		// 使用单一核心写入所有日志到一个文件（高性能模式）
 		writer := getWriteSyncer(path+"/app.log", cfg)
-		core := zapcore.NewCore(getEncoder(cfg), writer, zapcore.DebugLevel)
+		core := zapcore.NewCore(getEncoder(cfg), writer, logLevel)
 		cores = []zapcore.Core{core}
 	}
 
@@ -286,6 +290,7 @@ func getWriteSyncer(filename string, cfg *Config) zapcore.WriteSyncer {
 		MaxBackups: cfg.Segment.MaxBackups,
 		MaxAge:     cfg.Segment.MaxAge,
 		Compress:   cfg.Segment.Compress,
+		LocalTime:  true, // 确保使用本地时间
 	}
 	if cfg.LogStdout {
 		return zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), zapcore.AddSync(hook))
@@ -336,6 +341,27 @@ func getEncoderConfig(cfg *Config) (config zapcore.EncoderConfig) {
 // customTimeEncoder formats the time
 func customTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 	enc.AppendString("[" + t.Format("2006-01-02 15:04:05.000") + "]")
+}
+
+// parseLogLevel parses the log level from string
+func parseLogLevel(levelStr string) zapcore.Level {
+	switch strings.ToLower(levelStr) {
+	case "debug":
+		return zap.DebugLevel
+	case "info":
+		return zap.InfoLevel
+	case "warn", "warning":
+		return zap.WarnLevel
+	case "error":
+		return zap.ErrorLevel
+	case "panic":
+		return zap.PanicLevel
+	case "fatal":
+		return zap.FatalLevel
+	default:
+		// 默认为 info 级别
+		return zap.InfoLevel
+	}
 }
 
 func Debug(args ...interface{}) {

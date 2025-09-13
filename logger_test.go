@@ -261,3 +261,126 @@ func checkLogFile(t *testing.T, filePath, level, message string) {
 		t.Errorf("Log file %s should contain message '%s', but it doesn't. Content: %s", filePath, message, string(content))
 	}
 }
+
+func TestLogLevelFiltering(t *testing.T) {
+	// Create a temporary directory for logs
+	tempDir, err := os.MkdirTemp("", "glog_test_level_filtering")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a logger.yaml file with log level set to "warn" and separate_levels: false
+	configContent := `
+encoder: console
+path: ""
+directory: ""
+show_line: false
+encode_level: Capital
+log_stdout: false
+separate_levels: false
+log_level: "warn"
+segment:
+  max_size: 10
+  max_age: 7
+  max_backups: 10
+  compress: false
+`
+	configPath := filepath.Join(tempDir, "logger.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Initialize the logger
+	if err := Init(configPath, tempDir); err != nil {
+		t.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	// Log messages at different levels
+	Debug("This is a debug message")
+	Info("This is an info message")
+	Warn("This is a warning message")
+	Error("This is an error message")
+
+	// Check the combined log file
+	logFilePath := filepath.Join(tempDir, "app.log")
+	content, err := os.ReadFile(logFilePath)
+	if err != nil {
+		t.Fatalf("Failed to read log file %s: %v", logFilePath, err)
+	}
+
+	logContent := string(content)
+
+	// Should contain WARN and ERROR messages
+	if !strings.Contains(logContent, "This is a warning message") {
+		t.Errorf("Log file should contain the warning message, but it doesn't. Content: %s", logContent)
+	}
+	if !strings.Contains(logContent, "This is an error message") {
+		t.Errorf("Log file should contain the error message, but it doesn't. Content: %s", logContent)
+	}
+
+	// Should NOT contain DEBUG and INFO messages
+	if strings.Contains(logContent, "This is a debug message") {
+		t.Errorf("Log file should NOT contain the debug message, but it does. Content: %s", logContent)
+	}
+	if strings.Contains(logContent, "This is an info message") {
+		t.Errorf("Log file should NOT contain the info message, but it does. Content: %s", logContent)
+	}
+}
+
+func TestMissingLogLevelDefaultsToInfo(t *testing.T) {
+	// Create a temporary directory for logs
+	tempDir, err := os.MkdirTemp("", "glog_test_missing_level")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a logger.yaml file without log_level, which should default to INFO
+	configContent := `
+encoder: console
+path: ""
+directory: ""
+show_line: false
+encode_level: Capital
+log_stdout: false
+separate_levels: false
+segment:
+  max_size: 10
+  max_age: 7
+  max_backups: 10
+  compress: false
+`
+	configPath := filepath.Join(tempDir, "logger.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Initialize the logger
+	if err := Init(configPath, tempDir); err != nil {
+		t.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	// Log messages at different levels
+	Debug("This is a debug message")
+	Info("This is an info message")
+
+	// Check the combined log file
+	logFilePath := filepath.Join(tempDir, "app.log")
+	content, err := os.ReadFile(logFilePath)
+	if err != nil {
+		t.Fatalf("Failed to read log file %s: %v", logFilePath, err)
+	}
+
+	logContent := string(content)
+
+	// Should contain INFO message
+	if !strings.Contains(logContent, "This is an info message") {
+		t.Errorf("Log file should contain the info message, but it doesn't. Content: %s", logContent)
+	}
+
+	// Should NOT contain DEBUG message
+	if strings.Contains(logContent, "This is a debug message") {
+		t.Errorf("Log file should NOT contain the debug message, but it does. Content: %s", logContent)
+	}
+}
