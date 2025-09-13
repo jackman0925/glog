@@ -20,6 +20,8 @@ log_stdout: true
 high_performance: false
 # separate_levels: separate log levels to different files (set to false for better performance)
 separate_levels: true
+# log_level: minimum log level to output (debug, info, warn, error, panic, fatal)
+log_level: debug
 
 # segment: log rotation
 segment:
