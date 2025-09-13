@@ -3,10 +3,8 @@ package glog
 import (
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
-	"time"
-	
+
 	"go.uber.org/zap"
 )
 
@@ -127,15 +125,16 @@ func BenchmarkGetGoroutineID(b *testing.B) {
 	}
 }
 
-func BenchmarkConcurrentLogging(b *testing.B) {
+// BenchmarkProductionStressTest simulates a production-like logging scenario under high concurrency.
+func BenchmarkProductionStressTest(b *testing.B) {
 	// Create a temporary directory for logs
-	tempDir, err := os.MkdirTemp("", "glog_concurrent")
+	tempDir, err := os.MkdirTemp("", "glog_bench_prod")
 	if err != nil {
 		b.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Create a logger.yaml file
+	// A production-like configuration: single file, json encoder, info level.
 	configContent := `
 encoder: json
 path: ""
@@ -144,8 +143,10 @@ show_line: false
 show_goroutine: false
 encode_level: Capital
 log_stdout: false
+separate_levels: false
+log_level: "info"
 segment:
-  max_size: 10
+  max_size: 100
   max_age: 7
   max_backups: 10
   compress: false
@@ -161,27 +162,12 @@ segment:
 	}
 
 	b.ResetTimer()
-	
-	// Run concurrent logging from multiple goroutines
-	numGoroutines := 100
-	var wg sync.WaitGroup
-	wg.Add(numGoroutines)
-	
-	start := time.Now()
-	
-	for i := 0; i < numGoroutines; i++ {
-		go func(id int) {
-			defer wg.Done()
-			for j := 0; j < b.N/numGoroutines; j++ {
-				Infof("Goroutine %d, message %d", id, j)
-			}
-		}(i)
-	}
-	
-	wg.Wait()
-	
-	elapsed := time.Since(start)
-	b.ReportMetric(float64(b.N)/elapsed.Seconds(), "logs/sec")
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			// In a real-world scenario, logs often have arguments.
+			Info("A typical production log message", "user_id", 12345, "request_id", "abc-xyz-123")
+		}
+	})
 }
 
 func BenchmarkZapDirect(b *testing.B) {
