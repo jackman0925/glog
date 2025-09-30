@@ -32,18 +32,18 @@ const (
 
 // Config for glog
 type Config struct {
-	Encoder        string  `yaml:"encoder"`
-	Path           string  `yaml:"path"`
-	Directory      string  `yaml:"directory"`
-	ShowLine       bool    `yaml:"show_line"`
-	ShowGoroutine  bool    `yaml:"show_goroutine"`
-	EncodeLevel    string  `yaml:"encode_level"`
-	StacktraceKey  string  `yaml:"stacktrace_key"`
-	LogStdout      bool    `yaml:"log_stdout"`
-	HighPerformance bool   `yaml:"high_performance"`
-	SeparateLevels  bool   `yaml:"separate_levels"`
-	LogLevel       string  `yaml:"log_level"`
-	Segment        Segment `yaml:"segment"`
+	Encoder         string  `yaml:"encoder"`
+	Path            string  `yaml:"path"`
+	Directory       string  `yaml:"directory"`
+	ShowLine        bool    `yaml:"show_line"`
+	ShowGoroutine   bool    `yaml:"show_goroutine"`
+	EncodeLevel     string  `yaml:"encode_level"`
+	StacktraceKey   string  `yaml:"stacktrace_key"`
+	LogStdout       bool    `yaml:"log_stdout"`
+	HighPerformance bool    `yaml:"high_performance"`
+	SeparateLevels  bool    `yaml:"separate_levels"`
+	LogLevel        string  `yaml:"log_level"`
+	Segment         Segment `yaml:"segment"`
 }
 
 // setDefaults sets default values for config options
@@ -54,14 +54,14 @@ func (c *Config) setDefaults() {
 		// 这里简化处理，假设默认为 true 是安全的向后兼容选择
 		// 在实际实现中，可能需要更复杂的逻辑来区分"未设置"和"显式设置为false"
 	}
-	
+
 	// HighPerformance 默认为 false，无需特殊处理
-	
+
 	// 为其他字段设置默认值（如果需要）
 	if c.EncodeLevel == "" {
 		c.EncodeLevel = LowercaseLevelEncoder
 	}
-	
+
 	if c.StacktraceKey == "" {
 		c.StacktraceKey = "stacktrace"
 	}
@@ -102,17 +102,17 @@ func getGoroutineID() string {
 		goroutineIDCache = sync.Map{}
 	}
 	goroutineCacheCounter++
-	
+
 	// 获取当前 goroutine 的栈信息作为缓存键
 	buf := make([]byte, 32)
 	n := runtime.Stack(buf, false)
 	key := string(buf[:n])
-	
+
 	// 尝试从缓存获取
 	if id, ok := goroutineIDCache.Load(key); ok {
 		return id.(string)
 	}
-	
+
 	// 解析 goroutine ID
 	stackStr := string(buf[:n])
 	if idx := strings.Index(stackStr, "goroutine "); idx != -1 {
@@ -188,7 +188,7 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 	if cfg.HighPerformance {
 		return newHighPerformanceLogger(cfg)
 	}
-	
+
 	// 解析日志级别
 	logLevel := parseLogLevel(cfg.LogLevel)
 
@@ -256,7 +256,7 @@ func newHighPerformanceLogger(cfg *Config) (*zap.SugaredLogger, error) {
 	writer := getWriteSyncer(path+"/app.log", cfg)
 	core := zapcore.NewCore(getEncoder(cfg), writer, zapcore.DebugLevel)
 	logger := zap.New(core)
-	
+
 	// 高性能模式下禁用一些影响性能的特性
 	// 不添加调用者信息以提高性能
 	// 不需要显式调用 sl.Sync() 以减少开销
@@ -430,6 +430,26 @@ func Errorf(template string, args ...interface{}) {
 			xLog.With("goroutine", getGoroutineID()).Errorf(template, args...)
 		} else {
 			xLog.Errorf(template, args...)
+		}
+	}
+}
+
+func Fatal(args ...interface{}) {
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Fatal(args...)
+		} else {
+			xLog.Fatal(args...)
+		}
+	}
+}
+
+func Fatalf(template string, args ...interface{}) {
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Fatalf(template, args...)
+		} else {
+			xLog.Fatalf(template, args...)
 		}
 	}
 }
