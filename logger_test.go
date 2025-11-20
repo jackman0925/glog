@@ -328,6 +328,49 @@ segment:
 	}
 }
 
+func TestDebugf(t *testing.T) {
+	// Create a temporary directory for logs
+	tempDir, err := os.MkdirTemp("", "glog_test_debugf")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a logger.yaml file
+	configContent := `
+encoder: console
+path: ""
+directory: ""
+show_line: false
+encode_level: Capital
+log_stdout: false
+log_level: "debug"
+segment:
+  max_size: 10
+  max_age: 7
+  max_backups: 10
+  compress: false
+`
+	configPath := filepath.Join(tempDir, "logger.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Initialize the logger
+	if err := Init(configPath, tempDir); err != nil {
+		t.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	// Test Debugf with formatted message
+	component := "database"
+	status := "connected"
+	Debugf("Component %s status: %s", component, status)
+
+	// Check if log file was created and contains the formatted message
+	expectedMessage := "Component database status: connected"
+	checkLogFile(t, filepath.Join(tempDir, FileDebug), "DEBUG", expectedMessage)
+}
+
 func TestMissingLogLevelDefaultsToInfo(t *testing.T) {
 	// Create a temporary directory for logs
 	tempDir, err := os.MkdirTemp("", "glog_test_missing_level")

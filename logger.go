@@ -374,6 +374,16 @@ func Debug(args ...interface{}) {
 	}
 }
 
+func Debugf(template string, args ...interface{}) {
+	if xLog != nil {
+		if showGoroutine {
+			xLog.With("goroutine", getGoroutineID()).Debugf(template, args...)
+		} else {
+			xLog.Debugf(template, args...)
+		}
+	}
+}
+
 func Info(args ...interface{}) {
 	if xLog != nil {
 		if showGoroutine {
