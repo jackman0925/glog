@@ -427,3 +427,49 @@ segment:
 		t.Errorf("Log file should NOT contain the debug message, but it does. Content: %s", logContent)
 	}
 }
+
+func TestFlush(t *testing.T) {
+	// 1. Test Flush before specific initialization (should use default logger or nil check and not panic)
+	// Reset xLog to nil to test the nil check specifically, or rely on init() default.
+	// Since init() sets xLog, we are testing the Sync() on the default production logger.
+	err := Flush()
+	if err != nil {
+		// Syncing to stdout/stderr might fail on some platforms (like macOS/Linux "inappropriate ioctl for device")
+		// so we don't strictly assert nil error here, but we assert NO PANIC.
+		t.Logf("Flush on default logger returned error (expected on some envs): %v", err)
+	}
+
+	// 2. Initialize with a file logger (which should definitely be flushable)
+	tempDir, err := os.MkdirTemp("", "glog_test_flush")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	configContent := `
+encoder: console
+path: ""
+directory: ""
+log_stdout: false
+segment:
+  max_size: 1
+  max_age: 1
+  max_backups: 1
+  compress: false
+`
+	configPath := filepath.Join(tempDir, "logger.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	if err := Init(configPath, tempDir); err != nil {
+		t.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	Info("Message to flush")
+
+	// 3. Test Flush on initialized file logger
+	if err := Flush(); err != nil {
+		t.Errorf("Flush failed on file logger: %v", err)
+	}
+}

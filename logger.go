@@ -489,6 +489,14 @@ func (l *Logger) Printf(template string, args ...interface{}) {
 	l.Infof(template, args...)
 }
 
+// Flush flushes any buffered log entries.
+func Flush() error {
+	if xLog != nil {
+		return xLog.Sync()
+	}
+	return nil
+}
+
 // panicRedirect redirects panics to a file.
 func panicRedirect(logFile string) {
 	// This is a simplified panic redirect. In a real-world scenario,

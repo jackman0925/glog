@@ -55,9 +55,19 @@ func main() {
 	if err := glog.Init("./logger.yaml", "my-app"); err != nil {
 		log.Fatalf("failed to initialize logger: %v", err)
 	}
+	// Ensure logs are flushed before the program exits
+	defer glog.Flush()
 
 	glog.Info("This is an info message from the custom logger.")
 }
+```
+
+### Safe Exit
+
+To prevent log loss when the program exits (especially during a panic or abrupt shutdown), it is recommended to call `Flush()` before the application terminates.
+
+```go
+defer glog.Flush()
 ```
 
 ### Create a new logger instance
