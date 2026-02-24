@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-02-24
+### Fixed
+- **数据竞争修复**: `getGoroutineID()` 中的 `goroutineCacheCounter` 全局计数器存在并发读写数据竞争，移除了无效的缓存机制（基于完整栈内容的缓存 key 几乎不会命中），改为直接解析。
+- **数据竞争修复**: 全局 `xLog` 和 `showGoroutine` 变量在并发读写时存在竞争条件，改用 `atomic.Value` 包装为 `loggerState` 结构体，确保线程安全。
+- **资源泄露修复**: `panicRedirect` 中 `os.OpenFile` 打开的文件从未关闭，新增文件句柄跟踪与关闭机制。
+- **高性能模式 Bug**: `newHighPerformanceLogger` 硬编码 `zapcore.DebugLevel`，忽略了用户配置的 `log_level`，已修复为使用 `parseLogLevel(cfg.LogLevel)`。
+- **高性能模式行为一致性修复**: `newHighPerformanceLogger` 现在也会执行 `panicRedirect`，确保 `stderr` 输出与普通模式一致写入 `stderr.log`。
+- **冗余代码清理**: `mkdir` 函数中 `os.MkdirAll` 后多余的 `os.Chmod` 调用已移除；`setDefaults()` 中无效的空代码块已清理。
+
+### Changed
+- `newLogger` 中移除了初始化时的 `sl.Sync()` 空调用，减少无意义的 I/O 操作。
+- `getGoroutineID()` 改为使用 `sync.Pool` 复用临时 buffer，并增加截断场景处理，减少高频日志场景下的内存分配。
+
+### Added
+- 新增大量单元测试覆盖：`Infof`、`Warnf`、`Errorf`、`Panic`（带 recovery）、goroutine ID 并发测试、`parseLogLevel` 全面测试、高性能模式日志级别测试、JSON 编码器测试、`showLine` 测试、`customTimeEncoder` 测试、nil logger 安全测试等。
+- 新增 `parseGoroutineID` 边界测试（非法前缀、非数字 ID、空 ID 等）和高性能模式 `stderr` 重定向测试。
+- 测试覆盖率从 73.9% 提升至 86.7%。
+
 ## [1.0.3] - 2026-01-30
 ### Added
 - `Flush` function to ensure all buffered logs are written to disk.

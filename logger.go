@@ -1,6 +1,7 @@
 package glog
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"runtime"
@@ -76,6 +77,14 @@ var (
 	// currentState stores the current *loggerState atomically for safe concurrent access.
 	currentState atomic.Value
 
+	// goroutineIDBufPool reuses stack buffers to reduce per-log allocations.
+	goroutineIDBufPool = sync.Pool{
+		New: func() interface{} {
+			buf := make([]byte, 64)
+			return &buf
+		},
+	}
+
 	// stderrFile tracks the file used for panic redirect so it can be closed on re-init.
 	stderrFileMu sync.Mutex
 	stderrFile   *os.File
@@ -106,17 +115,47 @@ func getState() *loggerState {
 // getGoroutineID returns the current goroutine ID.
 // It parses the goroutine ID from the runtime stack trace.
 func getGoroutineID() string {
-	buf := make([]byte, 64)
+	bufPtr := goroutineIDBufPool.Get().(*[]byte)
+	defer goroutineIDBufPool.Put(bufPtr)
+
+	buf := *bufPtr
 	n := runtime.Stack(buf, false)
-	// Stack format: "goroutine <id> [..."
-	stackStr := string(buf[:n])
-	if idx := strings.Index(stackStr, "goroutine "); idx != -1 {
-		start := idx + len("goroutine ")
-		if end := strings.IndexByte(stackStr[start:], ' '); end != -1 {
-			return stackStr[start : start+end]
+
+	// runtime.Stack may truncate output when n == len(buf), so retry with a bigger buffer.
+	if n == len(buf) {
+		biggerBuf := make([]byte, 256)
+		n = runtime.Stack(biggerBuf, false)
+		return parseGoroutineID(biggerBuf[:n])
+	}
+
+	return parseGoroutineID(buf[:n])
+}
+
+func parseGoroutineID(stack []byte) string {
+	// Stack prefix format: "goroutine <id> ["
+	const prefix = "goroutine "
+	if !bytes.HasPrefix(stack, []byte(prefix)) {
+		return "unknown"
+	}
+
+	idStart := len(prefix)
+	idEnd := bytes.IndexByte(stack[idStart:], ' ')
+	if idEnd == -1 {
+		return "unknown"
+	}
+
+	id := stack[idStart : idStart+idEnd]
+	if len(id) == 0 {
+		return "unknown"
+	}
+
+	for _, b := range id {
+		if b < '0' || b > '9' {
+			return "unknown"
 		}
 	}
-	return "unknown"
+
+	return string(id)
 }
 
 // Init initializes a new logger with the given config file path and directory.
@@ -257,7 +296,9 @@ func newHighPerformanceLogger(cfg *Config) (*zap.SugaredLogger, error) {
 	// - No caller info for better performance
 	// - No explicit Sync() call to reduce overhead
 
-	return logger.Sugar(), nil
+	sl := logger.Sugar()
+	panicRedirect(path + FileStderr)
+	return sl, nil
 }
 
 func mkdir(path string) error {

@@ -88,10 +88,44 @@ func main() {
 		log.Fatalf("failed to create logger: %v", err)
 	}
 
-	logger.Info("This is a message from a new logger instance.")
+logger.Info("This is a message from a new logger instance.")
 }
 
 ```
+
+### Large Project Integration (Important)
+
+For large projects, prefer `New()` (or `NewLogger()`) plus dependency injection.
+
+- `glog.Info()/glog.Warn()` and other `glog.xxx` functions use the package-level global logger state.
+- `New()` creates an independent logger instance and does **not** change the global `glog.xxx` logger.
+- If you choose instance-based logging, do not mix it with `glog.xxx` in business modules.
+
+Recommended pattern:
+
+```go
+package service
+
+import "go.uber.org/zap"
+
+type UserService struct {
+	log *zap.SugaredLogger
+}
+
+func NewUserService(log *zap.SugaredLogger) *UserService {
+	return &UserService{log: log}
+}
+
+func (s *UserService) CreateUser(name string) {
+	s.log.Infow("create user", "name", name)
+}
+```
+
+Alternative (single global app logger):
+
+- Initialize once at process startup with `glog.Init(...)`.
+- Then use `glog.xxx` consistently across modules.
+- Avoid repeated `Init()` calls during runtime.
 
 ## Configuration
 

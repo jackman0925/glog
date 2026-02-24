@@ -1,6 +1,7 @@
 package glog
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -540,6 +541,49 @@ func TestGetGoroutineIDConcurrency(t *testing.T) {
 	}
 }
 
+func TestParseGoroutineID(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "valid",
+			input:    "goroutine 123 [running]:\n",
+			expected: "123",
+		},
+		{
+			name:     "non_numeric_id",
+			input:    "goroutine abc [running]:\n",
+			expected: "unknown",
+		},
+		{
+			name:     "missing_space_after_id",
+			input:    "goroutine 123\n",
+			expected: "unknown",
+		},
+		{
+			name:     "missing_prefix",
+			input:    "runtime stack",
+			expected: "unknown",
+		},
+		{
+			name:     "empty_id",
+			input:    "goroutine  [running]:\n",
+			expected: "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseGoroutineID([]byte(tt.input))
+			if got != tt.expected {
+				t.Errorf("parseGoroutineID(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestParseLogLevel(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -665,6 +709,48 @@ segment:
 	logContent := string(content)
 	if !strings.Contains(logContent, "info message in default high perf") {
 		t.Errorf("High performance mode with default level should contain info messages. Content: %s", logContent)
+	}
+}
+
+func TestHighPerformanceModeRedirectsStderr(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "glog_test_high_perf_stderr")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	configContent := `
+encoder: console
+path: ""
+directory: ""
+show_line: false
+encode_level: Capital
+log_stdout: false
+high_performance: true
+segment:
+  max_size: 10
+  max_age: 7
+  max_backups: 10
+  compress: false
+`
+	configPath := writeConfig(t, tempDir, configContent)
+
+	if err := Init(configPath, tempDir); err != nil {
+		t.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	marker := fmt.Sprintf("stderr-high-perf-%d", time.Now().UnixNano())
+	if _, err := fmt.Fprintln(os.Stderr, marker); err != nil {
+		t.Fatalf("Failed to write to stderr: %v", err)
+	}
+
+	stderrPath := filepath.Join(tempDir, FileStderr)
+	content, err := os.ReadFile(stderrPath)
+	if err != nil {
+		t.Fatalf("Failed to read stderr log file %s: %v", stderrPath, err)
+	}
+	if !strings.Contains(string(content), marker) {
+		t.Errorf("stderr.log should contain redirected stderr output marker %q, content: %s", marker, string(content))
 	}
 }
 
