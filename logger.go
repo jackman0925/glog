@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -48,16 +49,6 @@ type Config struct {
 
 // setDefaults sets default values for config options
 func (c *Config) setDefaults() {
-	// 如果未指定 SeparateLevels，默认为 true 以保持向后兼容
-	if c.SeparateLevels == false {
-		// 检查是否真的未设置（零值）或者显式设置为 false
-		// 这里简化处理，假设默认为 true 是安全的向后兼容选择
-		// 在实际实现中，可能需要更复杂的逻辑来区分"未设置"和"显式设置为false"
-	}
-
-	// HighPerformance 默认为 false，无需特殊处理
-
-	// 为其他字段设置默认值（如果需要）
 	if c.EncodeLevel == "" {
 		c.EncodeLevel = LowercaseLevelEncoder
 	}
@@ -75,13 +66,19 @@ type Segment struct {
 	Compress   bool `yaml:"compress"`
 }
 
-var (
-	xLog          *zap.SugaredLogger
+// loggerState holds the logger and its associated configuration atomically.
+type loggerState struct {
+	logger        *zap.SugaredLogger
 	showGoroutine bool
-	// Goroutine ID 缓存
-	goroutineIDCache sync.Map
-	// 缓存清理计数器
-	goroutineCacheCounter int64
+}
+
+var (
+	// currentState stores the current *loggerState atomically for safe concurrent access.
+	currentState atomic.Value
+
+	// stderrFile tracks the file used for panic redirect so it can be closed on re-init.
+	stderrFileMu sync.Mutex
+	stderrFile   *os.File
 )
 
 // Logger wraps zap.SugaredLogger to provide additional methods
@@ -90,37 +87,33 @@ type Logger struct {
 }
 
 func init() {
-	// Default logger - 使用生产模式提高性能
+	// Default logger - use production mode for performance
 	logger, _ := zap.NewProduction()
-	xLog = logger.Sugar()
+	currentState.Store(&loggerState{
+		logger:        logger.Sugar(),
+		showGoroutine: false,
+	})
 }
 
-// getGoroutineID returns the current goroutine ID
+// getState returns the current loggerState safely.
+func getState() *loggerState {
+	if v := currentState.Load(); v != nil {
+		return v.(*loggerState)
+	}
+	return nil
+}
+
+// getGoroutineID returns the current goroutine ID.
+// It parses the goroutine ID from the runtime stack trace.
 func getGoroutineID() string {
-	// 每10000次调用清理一次缓存，防止内存泄漏
-	if goroutineCacheCounter%10000 == 0 {
-		goroutineIDCache = sync.Map{}
-	}
-	goroutineCacheCounter++
-
-	// 获取当前 goroutine 的栈信息作为缓存键
-	buf := make([]byte, 32)
+	buf := make([]byte, 64)
 	n := runtime.Stack(buf, false)
-	key := string(buf[:n])
-
-	// 尝试从缓存获取
-	if id, ok := goroutineIDCache.Load(key); ok {
-		return id.(string)
-	}
-
-	// 解析 goroutine ID
+	// Stack format: "goroutine <id> [..."
 	stackStr := string(buf[:n])
 	if idx := strings.Index(stackStr, "goroutine "); idx != -1 {
 		start := idx + len("goroutine ")
-		if end := strings.Index(stackStr[start:], " "); end != -1 {
-			id := stackStr[start : start+end]
-			goroutineIDCache.Store(key, id)
-			return id
+		if end := strings.IndexByte(stackStr[start:], ' '); end != -1 {
+			return stackStr[start : start+end]
 		}
 	}
 	return "unknown"
@@ -134,14 +127,16 @@ func Init(cfgPath string, directory string) error {
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
 	cfg.Directory = directory
-	cfg.setDefaults() // 设置默认值以确保向后兼容
+	cfg.setDefaults()
 
 	logger, err := newLogger(cfg)
 	if err != nil {
 		return err
 	}
-	xLog = logger
-	showGoroutine = cfg.ShowGoroutine
+	currentState.Store(&loggerState{
+		logger:        logger,
+		showGoroutine: cfg.ShowGoroutine,
+	})
 	return nil
 }
 
@@ -152,7 +147,7 @@ func New(cfgPath string, directory string) (*zap.SugaredLogger, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 	cfg.Directory = directory
-	cfg.setDefaults() // 设置默认值以确保向后兼容
+	cfg.setDefaults()
 	return newLogger(cfg)
 }
 
@@ -164,7 +159,7 @@ func NewLogger(cfgPath string, directory string) (*Logger, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 	cfg.Directory = directory
-	cfg.setDefaults() // 设置默认值以确保向后兼容
+	cfg.setDefaults()
 
 	sugaredLogger, err := newLogger(cfg)
 	if err != nil {
@@ -184,12 +179,12 @@ func yamlToStruct(file string, out interface{}) (err error) {
 }
 
 func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
-	// 如果启用高性能模式，使用优化配置
+	// If high performance mode is enabled, use optimized config
 	if cfg.HighPerformance {
 		return newHighPerformanceLogger(cfg)
 	}
 
-	// 解析日志级别
+	// Parse log level
 	logLevel := parseLogLevel(cfg.LogLevel)
 
 	path := cfg.Path + cfg.Directory
@@ -197,11 +192,10 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	// 根据配置决定是否分离日志级别到不同文件
+	// Build cores based on config
 	var cores []zapcore.Core
 	if cfg.SeparateLevels {
-		// 分离日志级别到不同文件（默认行为，向后兼容）
-		// 为每个级别创建核心，但使用日志级别过滤器
+		// Separate log levels to different files (default behavior, backward compatible)
 		debugLevel := zap.LevelEnablerFunc(func(level zapcore.Level) bool {
 			return level == zap.DebugLevel && logLevel <= level
 		})
@@ -226,7 +220,7 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 			getEncoderCore(path+FilePanic, panicLevel, cfg),
 		}
 	} else {
-		// 使用单一核心写入所有日志到一个文件（高性能模式）
+		// Use a single core writing all logs to one file
 		writer := getWriteSyncer(path+"/app.log", cfg)
 		core := zapcore.NewCore(getEncoder(cfg), writer, logLevel)
 		cores = []zapcore.Core{core}
@@ -239,7 +233,6 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 	}
 
 	sl := logger.Sugar()
-	sl.Sync()
 
 	panicRedirect(path + FileStderr)
 	return sl, nil
@@ -252,30 +245,29 @@ func newHighPerformanceLogger(cfg *Config) (*zap.SugaredLogger, error) {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	// 使用单一核心写入所有日志到一个文件
+	// Respect configured log level instead of hardcoding DebugLevel
+	logLevel := parseLogLevel(cfg.LogLevel)
+
+	// Use a single core writing all logs to one file
 	writer := getWriteSyncer(path+"/app.log", cfg)
-	core := zapcore.NewCore(getEncoder(cfg), writer, zapcore.DebugLevel)
+	core := zapcore.NewCore(getEncoder(cfg), writer, logLevel)
 	logger := zap.New(core)
 
-	// 高性能模式下禁用一些影响性能的特性
-	// 不添加调用者信息以提高性能
-	// 不需要显式调用 sl.Sync() 以减少开销
+	// High performance mode disables some features:
+	// - No caller info for better performance
+	// - No explicit Sync() call to reduce overhead
 
 	return logger.Sugar(), nil
 }
 
-func mkdir(path string) (err error) {
-	_, err = os.Stat(path)
-	if err != nil {
+func mkdir(path string) error {
+	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			err = os.MkdirAll(path, 0755)
-			if err != nil {
-				return
-			}
-			err = os.Chmod(path, 0755)
+			return os.MkdirAll(path, 0755)
 		}
+		return err
 	}
-	return
+	return nil
 }
 
 func getEncoderCore(filename string, level zapcore.LevelEnabler, cfg *Config) (core zapcore.Core) {
@@ -290,7 +282,7 @@ func getWriteSyncer(filename string, cfg *Config) zapcore.WriteSyncer {
 		MaxBackups: cfg.Segment.MaxBackups,
 		MaxAge:     cfg.Segment.MaxAge,
 		Compress:   cfg.Segment.Compress,
-		LocalTime:  true, // 确保使用本地时间
+		LocalTime:  true,
 	}
 	if cfg.LogStdout {
 		return zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), zapcore.AddSync(hook))
@@ -359,127 +351,127 @@ func parseLogLevel(levelStr string) zapcore.Level {
 	case "fatal":
 		return zap.FatalLevel
 	default:
-		// 默认为 info 级别
+		// Default to info level
 		return zap.InfoLevel
 	}
 }
 
 func Debug(args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Debug(args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Debug(args...)
 		} else {
-			xLog.Debug(args...)
+			s.logger.Debug(args...)
 		}
 	}
 }
 
 func Debugf(template string, args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Debugf(template, args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Debugf(template, args...)
 		} else {
-			xLog.Debugf(template, args...)
+			s.logger.Debugf(template, args...)
 		}
 	}
 }
 
 func Info(args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Info(args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Info(args...)
 		} else {
-			xLog.Info(args...)
+			s.logger.Info(args...)
 		}
 	}
 }
 
 func Infof(template string, args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Infof(template, args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Infof(template, args...)
 		} else {
-			xLog.Infof(template, args...)
+			s.logger.Infof(template, args...)
 		}
 	}
 }
 
 func Warn(args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Warn(args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Warn(args...)
 		} else {
-			xLog.Warn(args...)
+			s.logger.Warn(args...)
 		}
 	}
 }
 
 func Warnf(format string, args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Warnf(format, args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Warnf(format, args...)
 		} else {
-			xLog.Warnf(format, args...)
+			s.logger.Warnf(format, args...)
 		}
 	}
 }
 
 func Error(args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Error(args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Error(args...)
 		} else {
-			xLog.Error(args...)
+			s.logger.Error(args...)
 		}
 	}
 }
 
 func Errorf(template string, args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Errorf(template, args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Errorf(template, args...)
 		} else {
-			xLog.Errorf(template, args...)
+			s.logger.Errorf(template, args...)
 		}
 	}
 }
 
 func Fatal(args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Fatal(args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Fatal(args...)
 		} else {
-			xLog.Fatal(args...)
+			s.logger.Fatal(args...)
 		}
 	}
 }
 
 func Fatalf(template string, args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Fatalf(template, args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Fatalf(template, args...)
 		} else {
-			xLog.Fatalf(template, args...)
+			s.logger.Fatalf(template, args...)
 		}
 	}
 }
 
 func Panic(args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Panic(args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Panic(args...)
 		} else {
-			xLog.Panic(args...)
+			s.logger.Panic(args...)
 		}
 	}
 }
 
 func Printf(template string, args ...interface{}) {
-	if xLog != nil {
-		if showGoroutine {
-			xLog.With("goroutine", getGoroutineID()).Infof(template, args...)
+	if s := getState(); s != nil && s.logger != nil {
+		if s.showGoroutine {
+			s.logger.With("goroutine", getGoroutineID()).Infof(template, args...)
 		} else {
-			xLog.Infof(template, args...)
+			s.logger.Infof(template, args...)
 		}
 	}
 }
@@ -491,24 +483,29 @@ func (l *Logger) Printf(template string, args ...interface{}) {
 
 // Flush flushes any buffered log entries.
 func Flush() error {
-	if xLog != nil {
-		return xLog.Sync()
+	if s := getState(); s != nil && s.logger != nil {
+		return s.logger.Sync()
 	}
 	return nil
 }
 
 // panicRedirect redirects panics to a file.
 func panicRedirect(logFile string) {
-	// This is a simplified panic redirect. In a real-world scenario,
-	// you might want to handle file opening/closing more carefully.
 	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		xLog.Errorf("Failed to redirect panic output: %v", err)
+		if s := getState(); s != nil && s.logger != nil {
+			s.logger.Errorf("Failed to redirect panic output: %v", err)
+		}
 		return
 	}
 
-	// This is a simplified version. For a more robust solution, consider syscall redirection.
-	// Note: This will not capture all panics, especially those that happen before this code runs.
-	// It also doesn't handle concurrent panics well.
+	// Close previous stderr redirect file if any
+	stderrFileMu.Lock()
+	if stderrFile != nil {
+		stderrFile.Close()
+	}
+	stderrFile = file
+	stderrFileMu.Unlock()
+
 	os.Stderr = file
 }

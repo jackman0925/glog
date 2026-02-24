@@ -9,10 +9,12 @@ import (
 )
 
 func BenchmarkDefaultLogger(b *testing.B) {
-	// Reset to default logger
+	// Reset to default logger via atomic state
 	logger, _ := zap.NewDevelopment()
-	xLog = logger.Sugar()
-	showGoroutine = false
+	currentState.Store(&loggerState{
+		logger:        logger.Sugar(),
+		showGoroutine: false,
+	})
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
@@ -23,10 +25,12 @@ func BenchmarkDefaultLogger(b *testing.B) {
 }
 
 func BenchmarkGoroutineIDLogger(b *testing.B) {
-	// Reset to default logger
+	// Reset to default logger with goroutine ID enabled
 	logger, _ := zap.NewDevelopment()
-	xLog = logger.Sugar()
-	showGoroutine = true
+	currentState.Store(&loggerState{
+		logger:        logger.Sugar(),
+		showGoroutine: true,
+	})
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
