@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.1] - 2026-03-08
+### Added
+- Optional Gin middleware subpackage `middleware/ginmw` with `GinLogger`, `GinLoggerWithConfig`, and `GinRecovery`.
+- Unit tests for Gin middleware covering request logging levels, skip paths, panic recovery, and nil logger safety.
+- Gin demo at `examples/gin_demo/main.go` and middleware guide `docs/GIN_MIDDLEWARE.md`.
+
 ## [1.1.0] - 2026-02-24
 ### Fixed
 - **数据竞争修复**: `getGoroutineID()` 中的 `goroutineCacheCounter` 全局计数器存在并发读写数据竞争，移除了无效的缓存机制（基于完整栈内容的缓存 key 几乎不会命中），改为直接解析。

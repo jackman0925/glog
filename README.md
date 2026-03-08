@@ -88,7 +88,7 @@ func main() {
 		log.Fatalf("failed to create logger: %v", err)
 	}
 
-logger.Info("This is a message from a new logger instance.")
+	logger.Info("This is a message from a new logger instance.")
 }
 
 ```
@@ -126,6 +126,57 @@ Alternative (single global app logger):
 - Initialize once at process startup with `glog.Init(...)`.
 - Then use `glog.xxx` consistently across modules.
 - Avoid repeated `Init()` calls during runtime.
+
+### Gin Middleware (Optional Subpackage)
+
+`glog` now provides optional Gin middleware in `middleware/ginmw`.
+
+Install (if your app uses Gin):
+
+```bash
+go get github.com/gin-gonic/gin
+```
+
+Use with instance logger (`New()`):
+
+```go
+package main
+
+import (
+	"log"
+
+	"github.com/gin-gonic/gin"
+	"github.com/jackman0925/glog"
+	"github.com/jackman0925/glog/middleware/ginmw"
+)
+
+func main() {
+	logger, err := glog.New("./logger.yaml", "/my-gin-app")
+	if err != nil {
+		log.Fatalf("failed to create logger: %v", err)
+	}
+	defer logger.Sync()
+
+	r := gin.New()
+	r.Use(
+		ginmw.GinLoggerWithConfig(logger, ginmw.LoggerConfig{
+			SkipPaths: []string{"/healthz"},
+		}),
+		ginmw.GinRecovery(logger, true),
+	)
+}
+```
+
+Middleware behavior:
+
+- `GinLogger`: logs request fields (`method`, `path`, `status`, `latency_ms`, `client_ip`, `user_agent`, optional `request_id`).
+- Log level mapping: `5xx -> Error`, `4xx -> Warn`, others `Info`.
+- `GinRecovery`: recovers panic, logs panic info (and stack when enabled), returns HTTP 500.
+
+See runnable demo:
+
+- `examples/gin_demo/main.go`
+- `docs/GIN_MIDDLEWARE.md`
 
 ## Configuration
 
