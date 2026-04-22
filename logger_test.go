@@ -1203,3 +1203,181 @@ func (e *testArrayEncoder) AppendUint32(uint32)         {}
 func (e *testArrayEncoder) AppendUint16(uint16)         {}
 func (e *testArrayEncoder) AppendUint8(uint8)           {}
 func (e *testArrayEncoder) AppendUintptr(uintptr)       {}
+
+// --- Tests for New() with setGlobal parameter ---
+
+// TestNewDefaultDoesNotAffectGlobal verifies that calling New() without setGlobal
+// (default false) does NOT replace the global logger.
+func TestNewDefaultDoesNotAffectGlobal(t *testing.T) {
+	// First, init a known global logger.
+	globalDir, err := os.MkdirTemp("", "glog_test_new_global_check")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(globalDir)
+
+	globalCfg := writeConfig(t, globalDir, baseConsoleConfig)
+	if err := Init(globalCfg, globalDir); err != nil {
+		t.Fatalf("Failed to init global logger: %v", err)
+	}
+
+	// Capture the current global state pointer before calling New().
+	stateBefore := getState()
+
+	// Call New() without setGlobal — should NOT change global state.
+	localDir, err := os.MkdirTemp("", "glog_test_new_local")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(localDir)
+
+	localCfg := writeConfig(t, localDir, baseConsoleConfig)
+	logger, err := New(localCfg, localDir)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	if logger == nil {
+		t.Fatal("New() returned nil logger")
+	}
+
+	// Global state must remain unchanged.
+	stateAfter := getState()
+	if stateBefore != stateAfter {
+		t.Error("New() without setGlobal should NOT change the global logger, but it did")
+	}
+}
+
+// TestNewWithSetGlobalFalseDoesNotAffectGlobal verifies that explicitly passing
+// setGlobal=false produces the same result as the default (no global change).
+func TestNewWithSetGlobalFalseDoesNotAffectGlobal(t *testing.T) {
+	globalDir, err := os.MkdirTemp("", "glog_test_setglobal_false")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(globalDir)
+
+	globalCfg := writeConfig(t, globalDir, baseConsoleConfig)
+	if err := Init(globalCfg, globalDir); err != nil {
+		t.Fatalf("Failed to init global logger: %v", err)
+	}
+
+	stateBefore := getState()
+
+	localDir, err := os.MkdirTemp("", "glog_test_setglobal_false_local")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(localDir)
+
+	localCfg := writeConfig(t, localDir, baseConsoleConfig)
+	logger, err := New(localCfg, localDir, false) // explicit false
+	if err != nil {
+		t.Fatalf("New(false) failed: %v", err)
+	}
+	if logger == nil {
+		t.Fatal("New(false) returned nil logger")
+	}
+
+	stateAfter := getState()
+	if stateBefore != stateAfter {
+		t.Error("New(false) should NOT change the global logger, but it did")
+	}
+}
+
+// TestNewWithSetGlobalTrueReplacesGlobal verifies that passing setGlobal=true
+// updates the global logger so package-level functions (glog.Info etc.) use it.
+func TestNewWithSetGlobalTrueReplacesGlobal(t *testing.T) {
+	newDir, err := os.MkdirTemp("", "glog_test_setglobal_true")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(newDir)
+
+	cfgPath := writeConfig(t, newDir, baseConsoleConfig)
+
+	logger, err := New(cfgPath, newDir, true) // setGlobal = true
+	if err != nil {
+		t.Fatalf("New(true) failed: %v", err)
+	}
+	if logger == nil {
+		t.Fatal("New(true) returned nil logger")
+	}
+
+	// The global state should now point to the logger created by New().
+	state := getState()
+	if state == nil || state.logger == nil {
+		t.Fatal("Global logger is nil after New(true)")
+	}
+
+	// Write via package-level function — must appear in newDir's log files.
+	Info("setglobal_true_package_level_message")
+	Flush() //nolint:errcheck
+
+	checkLogFile(t, newDir+FileInfo, "INFO", "setglobal_true_package_level_message")
+}
+
+// TestNewWithSetGlobalTrueBothHandleAndGlobalWork verifies that after New(true),
+// both the returned handle AND the package-level functions write to the same logger.
+func TestNewWithSetGlobalTrueBothHandleAndGlobalWork(t *testing.T) {
+	dir, err := os.MkdirTemp("", "glog_test_setglobal_both")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	cfgPath := writeConfig(t, dir, baseConsoleConfig)
+
+	logger, err := New(cfgPath, dir, true)
+	if err != nil {
+		t.Fatalf("New(true) failed: %v", err)
+	}
+
+	// Write via handle.
+	logger.Info("via_handle_message")
+	// Write via package-level function.
+	Info("via_package_level_message")
+	Flush() //nolint:errcheck
+
+	content, err := os.ReadFile(dir + FileInfo)
+	if err != nil {
+		t.Fatalf("Failed to read log file: %v", err)
+	}
+	logContent := string(content)
+
+	if !strings.Contains(logContent, "via_handle_message") {
+		t.Errorf("Log should contain handle message. Content:\n%s", logContent)
+	}
+	if !strings.Contains(logContent, "via_package_level_message") {
+		t.Errorf("Log should contain package-level message. Content:\n%s", logContent)
+	}
+}
+
+// TestNewErrorWithSetGlobal verifies that when New() returns an error,
+// the global logger is NOT changed regardless of setGlobal value.
+func TestNewErrorWithSetGlobal(t *testing.T) {
+	// Ensure there is a known global state before the call.
+	globalDir, err := os.MkdirTemp("", "glog_test_new_err_global")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(globalDir)
+
+	globalCfg := writeConfig(t, globalDir, baseConsoleConfig)
+	if err := Init(globalCfg, globalDir); err != nil {
+		t.Fatalf("Failed to init global logger: %v", err)
+	}
+
+	stateBefore := getState()
+
+	// Trigger an error (non-existent config file) with setGlobal=true.
+	_, err = New("non_existent_config.yaml", "somedir", true)
+	if err == nil {
+		t.Fatal("Expected error from New() with bad config, got nil")
+	}
+
+	// Global state must be untouched.
+	stateAfter := getState()
+	if stateBefore != stateAfter {
+		t.Error("New(true) with error should NOT change the global logger, but it did")
+	}
+}

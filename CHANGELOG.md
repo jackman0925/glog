@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-04-22
+### Changed
+- `New(cfgPath, directory string, setGlobal ...bool)` 新增可选参数 `setGlobal`（默认 `false`）：
+  - `setGlobal` 为 `false`（默认）：行为与原来完全相同，仅返回独立的 logger 句柄，不影响全局状态。
+  - `setGlobal` 为 `true`：在返回句柄的同时，将新建的 logger 设置为全局默认 logger，之后可直接通过 `glog.Info()`、`glog.Error()` 等包级函数使用，无需传递句柄。
+  - 该设计兼顾两种使用场景，同时保持向后兼容（无需修改任何现有调用代码）。
+
 ## [1.1.1] - 2026-03-08
 ### Added
 - Optional Gin middleware subpackage `middleware/ginmw` with `GinLogger`, `GinLoggerWithConfig`, and `GinRecovery`.

@@ -180,14 +180,44 @@ func Init(cfgPath string, directory string) error {
 }
 
 // New creates a new logger with the given config file path and directory.
-func New(cfgPath string, directory string) (*zap.SugaredLogger, error) {
+//
+// 可选参数 setGlobal（默认 false）控制是否同时替换全局 logger：
+//   - setGlobal = false（默认）：仅返回独立 logger 句柄，不影响全局状态，
+//     与原行为完全一致，适合多实例或局部使用场景。
+//   - setGlobal = true：在返回句柄的同时将新建 logger 设为全局默认，
+//     之后可在任意位置直接调用 glog.Info()、glog.Error() 等包级函数。
+//
+// 示例：
+//
+//	// 仅使用句柄（默认行为，向后兼容）
+//	logger, err := glog.New("config.yaml", "./logs")
+//	logger.Info("hello")
+//
+//	// 同时设为全局，后续可直接使用包级函数
+//	logger, err := glog.New("config.yaml", "./logs", true)
+//	glog.Info("hello") // 生效
+func New(cfgPath string, directory string, setGlobal ...bool) (*zap.SugaredLogger, error) {
 	cfg := &Config{SeparateLevels: true}
 	if err := yamlToStruct(cfgPath, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 	cfg.Directory = directory
 	cfg.setDefaults()
-	return newLogger(cfg)
+
+	logger, err := newLogger(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// 仅当调用方显式传入 true 时才更新全局 logger
+	if len(setGlobal) > 0 && setGlobal[0] {
+		currentState.Store(&loggerState{
+			logger:        logger,
+			showGoroutine: cfg.ShowGoroutine,
+		})
+	}
+
+	return logger, nil
 }
 
 // NewLogger creates a new Logger instance with the given config file path and directory.
