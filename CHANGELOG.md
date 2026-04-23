@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-04-23
+### Fixed
+- **Instance Logger 行号偏移修复**: 修复了通过 `New` 或 `NewLogger` 创建的实例 logger 在开启 `show_line` 时行号显示不准确的问题（之前由于硬编码的 `AddCallerSkip(1)` 导致行号向上偏移一层，显示为调用方的调用方）。
+- **Goroutine ID 内存分配优化**: 修复了 `getGoroutineID()` 中由于 64 字节 buffer 极易溢出导致 `sync.Pool` 被绕过、转而重新分配 256 字节内存的问题。优化后完全命中 Pool，单次获取 ID 的分配降至 1 allocs/op。
+
+### Changed
+- **全局函数性能提升**: 在 `glog.Debug` 等全局封装函数中增加了前置级别检查。当日志级别被禁用时直接返回，避免了在禁用级别下依然执行昂贵的 `runtime.Stack` 和 Logger 克隆操作。禁用级别的日志调用性能提升约 80 倍。
+- **Caller Skip 逻辑重构**: 将 `AddCallerSkip(1)` 从底层 `newLogger` 移至全局初始化逻辑中，确保全局包装函数与独立实例 logger 均能获得正确的行号信息。
+
+### Added
+- 新增 `fix_verify_test.go` 专门验证行号修复结果以及禁用级别下的零分配性能。
+
 ## [1.1.2] - 2026-04-22
 ### Changed
 - `New(cfgPath, directory string, setGlobal ...bool)` 新增可选参数 `setGlobal`（默认 `false`）：
