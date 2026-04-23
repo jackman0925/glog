@@ -121,13 +121,6 @@ func getGoroutineID() string {
 	buf := *bufPtr
 	n := runtime.Stack(buf, false)
 
-	// runtime.Stack may truncate output when n == len(buf), so retry with a bigger buffer.
-	if n == len(buf) {
-		biggerBuf := make([]byte, 256)
-		n = runtime.Stack(biggerBuf, false)
-		return parseGoroutineID(biggerBuf[:n])
-	}
-
 	return parseGoroutineID(buf[:n])
 }
 
@@ -172,8 +165,12 @@ func Init(cfgPath string, directory string) error {
 	if err != nil {
 		return err
 	}
+	globalLogger := logger
+	if cfg.ShowLine {
+		globalLogger = logger.Desugar().WithOptions(zap.AddCallerSkip(1)).Sugar()
+	}
 	currentState.Store(&loggerState{
-		logger:        logger,
+		logger:        globalLogger,
 		showGoroutine: cfg.ShowGoroutine,
 	})
 	return nil
@@ -211,8 +208,12 @@ func New(cfgPath string, directory string, setGlobal ...bool) (*zap.SugaredLogge
 
 	// 仅当调用方显式传入 true 时才更新全局 logger
 	if len(setGlobal) > 0 && setGlobal[0] {
+		globalLogger := logger
+		if cfg.ShowLine {
+			globalLogger = logger.Desugar().WithOptions(zap.AddCallerSkip(1)).Sugar()
+		}
 		currentState.Store(&loggerState{
-			logger:        logger,
+			logger:        globalLogger,
 			showGoroutine: cfg.ShowGoroutine,
 		})
 	}
@@ -298,7 +299,7 @@ func newLogger(cfg *Config) (*zap.SugaredLogger, error) {
 	logger := zap.New(zapcore.NewTee(cores...))
 
 	if cfg.ShowLine {
-		logger = logger.WithOptions(zap.AddCaller(), zap.AddCallerSkip(1))
+		logger = logger.WithOptions(zap.AddCaller())
 	}
 
 	sl := logger.Sugar()
@@ -429,6 +430,9 @@ func parseLogLevel(levelStr string) zapcore.Level {
 
 func Debug(args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.DebugLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Debug(args...)
 		} else {
@@ -439,6 +443,9 @@ func Debug(args ...interface{}) {
 
 func Debugf(template string, args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.DebugLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Debugf(template, args...)
 		} else {
@@ -449,6 +456,9 @@ func Debugf(template string, args ...interface{}) {
 
 func Info(args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.InfoLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Info(args...)
 		} else {
@@ -459,6 +469,9 @@ func Info(args ...interface{}) {
 
 func Infof(template string, args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.InfoLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Infof(template, args...)
 		} else {
@@ -469,6 +482,9 @@ func Infof(template string, args ...interface{}) {
 
 func Warn(args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.WarnLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Warn(args...)
 		} else {
@@ -479,6 +495,9 @@ func Warn(args ...interface{}) {
 
 func Warnf(format string, args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.WarnLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Warnf(format, args...)
 		} else {
@@ -489,6 +508,9 @@ func Warnf(format string, args ...interface{}) {
 
 func Error(args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.ErrorLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Error(args...)
 		} else {
@@ -499,6 +521,9 @@ func Error(args ...interface{}) {
 
 func Errorf(template string, args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.ErrorLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Errorf(template, args...)
 		} else {
@@ -509,6 +534,9 @@ func Errorf(template string, args ...interface{}) {
 
 func Fatal(args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.FatalLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Fatal(args...)
 		} else {
@@ -519,6 +547,9 @@ func Fatal(args ...interface{}) {
 
 func Fatalf(template string, args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.FatalLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Fatalf(template, args...)
 		} else {
@@ -529,6 +560,9 @@ func Fatalf(template string, args ...interface{}) {
 
 func Panic(args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.PanicLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Panic(args...)
 		} else {
@@ -539,6 +573,9 @@ func Panic(args ...interface{}) {
 
 func Printf(template string, args ...interface{}) {
 	if s := getState(); s != nil && s.logger != nil {
+		if !s.logger.Desugar().Core().Enabled(zap.InfoLevel) {
+			return
+		}
 		if s.showGoroutine {
 			s.logger.With("goroutine", getGoroutineID()).Infof(template, args...)
 		} else {
