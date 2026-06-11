@@ -14,6 +14,7 @@ This project provides an optional Gin middleware subpackage:
 
 - `SkipPaths []string`: exact paths to skip logging.
 - `RequestIDHeader string`: request ID header key (default: `X-Request-ID`).
+- `TraceIDHeader string`: trace ID header key (default: `X-Trace-ID`, with W3C `traceparent` fallback).
 - `Message string`: request log message (default: `gin request`).
 
 ## Structured Fields
@@ -27,6 +28,7 @@ This project provides an optional Gin middleware subpackage:
 - `client_ip`
 - `user_agent`
 - `request_id` (when header is present)
+- `trace_id` (from configured trace header, or W3C `traceparent`)
 - `errors` (when Gin context has errors)
 
 ## Level Mapping
@@ -42,6 +44,8 @@ For large projects, prefer instance logger injection:
 1. Create logger with `glog.New(...)`.
 2. Pass logger into middleware constructors.
 3. Avoid mixing `glog.xxx` global logging and instance logging in business modules.
+
+Use `encoder: json` in production so request fields such as `trace_id` can be queried reliably by log collection systems.
 
 ## Demo
 

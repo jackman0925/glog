@@ -169,9 +169,10 @@ func main() {
 
 Middleware behavior:
 
-- `GinLogger`: logs request fields (`method`, `path`, `status`, `latency_ms`, `client_ip`, `user_agent`, optional `request_id`).
+- `GinLogger`: logs request fields (`method`, `path`, `status`, `latency_ms`, `client_ip`, `user_agent`, optional `request_id`, optional `trace_id`).
 - Log level mapping: `5xx -> Error`, `4xx -> Warn`, others `Info`.
 - `GinRecovery`: recovers panic, logs panic info (and stack when enabled), returns HTTP 500.
+- `trace_id` is read from `X-Trace-ID` by default, with W3C `traceparent` fallback.
 
 See runnable demo:
 
@@ -197,3 +198,5 @@ The following options are available in the `logger.yaml` file:
     *   `max_age`: Max age of log file before rotation (days).
     *   `max_backups`: Max number of backups.
     *   `compress`: Compress rotated log files (`true` or `false`).
+
+For production log collection, set `encoder: json` so every log line is structured JSON and request logs can be queried by fields such as `trace_id` and `request_id`.

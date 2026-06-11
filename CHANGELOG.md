@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-06-11
+### Added
+- `middleware/ginmw` request and recovery logs now include `trace_id` when `X-Trace-ID` or W3C `traceparent` is present.
+- `LoggerConfig` now supports `TraceIDHeader` for custom trace header names.
+
 ## [1.1.3] - 2026-04-23
 ### Fixed
 - **Instance Logger 行号偏移修复**: 修复了通过 `New` 或 `NewLogger` 创建的实例 logger 在开启 `show_line` 时行号显示不准确的问题（之前由于硬编码的 `AddCallerSkip(1)` 导致行号向上偏移一层，显示为调用方的调用方）。

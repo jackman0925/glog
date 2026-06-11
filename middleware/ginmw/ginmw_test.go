@@ -30,6 +30,7 @@ func TestGinLoggerInfo(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/ok?x=1", nil)
 	req.Header.Set("X-Request-ID", "req-1")
+	req.Header.Set("X-Trace-ID", "trace-1")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -59,6 +60,59 @@ func TestGinLoggerInfo(t *testing.T) {
 	}
 	if ctx["request_id"] != "req-1" {
 		t.Fatalf("expected request_id req-1, got %#v", ctx["request_id"])
+	}
+	if ctx["trace_id"] != "trace-1" {
+		t.Fatalf("expected trace_id trace-1, got %#v", ctx["trace_id"])
+	}
+}
+
+func TestGinLoggerTraceIDFromTraceparent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	log, observed := newObservedSugaredLogger(zapcore.DebugLevel)
+
+	r := gin.New()
+	r.Use(GinLogger(log))
+	r.GET("/ok", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	entries := observed.All()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	}
+
+	traceID := entries[0].ContextMap()["trace_id"]
+	if traceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("unexpected trace_id: %#v", traceID)
+	}
+}
+
+func TestGinLoggerCustomTraceIDHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	log, observed := newObservedSugaredLogger(zapcore.DebugLevel)
+
+	r := gin.New()
+	r.Use(GinLoggerWithConfig(log, LoggerConfig{TraceIDHeader: "X-Correlation-ID"}))
+	r.GET("/ok", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.Header.Set("X-Correlation-ID", "correlation-1")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	entries := observed.All()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	}
+
+	traceID := entries[0].ContextMap()["trace_id"]
+	if traceID != "correlation-1" {
+		t.Fatalf("unexpected trace_id: %#v", traceID)
 	}
 }
 
@@ -129,7 +183,10 @@ func TestGinRecovery(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/panic", nil))
+	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
+	req.Header.Set("X-Request-ID", "req-panic")
+	req.Header.Set("X-Trace-ID", "trace-panic")
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
@@ -150,9 +207,31 @@ func TestGinRecovery(t *testing.T) {
 	if ctx["panic"] != "boom" {
 		t.Fatalf("expected panic field boom, got %#v", ctx["panic"])
 	}
+	if ctx["request_id"] != "req-panic" {
+		t.Fatalf("expected request_id req-panic, got %#v", ctx["request_id"])
+	}
+	if ctx["trace_id"] != "trace-panic" {
+		t.Fatalf("expected trace_id trace-panic, got %#v", ctx["trace_id"])
+	}
 	stack, ok := ctx["stack"].(string)
 	if !ok || strings.TrimSpace(stack) == "" {
 		t.Fatalf("expected non-empty stack")
+	}
+}
+
+func TestTraceIDFromTraceparentInvalid(t *testing.T) {
+	tests := []string{
+		"",
+		"invalid",
+		"00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+		"00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01",
+		"00-short-00f067aa0ba902b7-01",
+	}
+
+	for _, tt := range tests {
+		if got := traceIDFromTraceparent(tt); got != "" {
+			t.Fatalf("traceIDFromTraceparent(%q) = %q, want empty", tt, got)
+		}
 	}
 }
 

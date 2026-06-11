@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,8 @@ type LoggerConfig struct {
 	SkipPaths []string
 	// RequestIDHeader is the HTTP header key used to extract request ID.
 	RequestIDHeader string
+	// TraceIDHeader is the HTTP header key used to extract trace ID.
+	TraceIDHeader string
 	// Message is the log message emitted for each request.
 	Message string
 }
@@ -36,6 +39,11 @@ func GinLoggerWithConfig(log *zap.SugaredLogger, cfg LoggerConfig) gin.HandlerFu
 	requestIDHeader := cfg.RequestIDHeader
 	if requestIDHeader == "" {
 		requestIDHeader = "X-Request-ID"
+	}
+
+	traceIDHeader := cfg.TraceIDHeader
+	if traceIDHeader == "" {
+		traceIDHeader = "X-Trace-ID"
 	}
 
 	message := cfg.Message
@@ -72,6 +80,9 @@ func GinLoggerWithConfig(log *zap.SugaredLogger, cfg LoggerConfig) gin.HandlerFu
 		if requestID := c.GetHeader(requestIDHeader); requestID != "" {
 			fields = append(fields, "request_id", requestID)
 		}
+		if traceID := traceIDFromRequest(c.Request, traceIDHeader); traceID != "" {
+			fields = append(fields, "trace_id", traceID)
+		}
 		if errMsg := c.Errors.String(); errMsg != "" {
 			fields = append(fields, "errors", errMsg)
 		}
@@ -99,6 +110,12 @@ func GinRecovery(log *zap.SugaredLogger, includeStack bool) gin.HandlerFunc {
 					"client_ip", c.ClientIP(),
 					"panic", fmt.Sprint(recovered),
 				}
+				if requestID := c.GetHeader("X-Request-ID"); requestID != "" {
+					fields = append(fields, "request_id", requestID)
+				}
+				if traceID := traceIDFromRequest(c.Request, "X-Trace-ID"); traceID != "" {
+					fields = append(fields, "trace_id", traceID)
+				}
 				if includeStack {
 					fields = append(fields, "stack", string(debug.Stack()))
 				}
@@ -116,4 +133,32 @@ func ensureLogger(log *zap.SugaredLogger) *zap.SugaredLogger {
 		return log
 	}
 	return zap.NewNop().Sugar()
+}
+
+func traceIDFromRequest(req *http.Request, header string) string {
+	if traceID := strings.TrimSpace(req.Header.Get(header)); traceID != "" {
+		return traceID
+	}
+	return traceIDFromTraceparent(req.Header.Get("traceparent"))
+}
+
+func traceIDFromTraceparent(traceparent string) string {
+	parts := strings.Split(strings.TrimSpace(traceparent), "-")
+	if len(parts) != 4 {
+		return ""
+	}
+
+	traceID := parts[1]
+	if len(traceID) != 32 {
+		return ""
+	}
+	if strings.Trim(traceID, "0") == "" {
+		return ""
+	}
+	for _, c := range traceID {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return ""
+		}
+	}
+	return traceID
 }
