@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-07-21
+### Added
+- `LoggerConfig` now supports `SkipSuccessfulPaths` to skip only successful matched paths while preserving `4xx/5xx` logs.
+- Added `README.zh-CN.md` with Chinese usage docs.
+- Updated Gin demo to show `SkipSuccessfulPaths`, failed health checks, and 4xx request logging.
+
 ## [1.1.4] - 2026-06-11
 ### Added
 - `middleware/ginmw` request and recovery logs now include `trace_id` when `X-Trace-ID` or W3C `traceparent` is present.

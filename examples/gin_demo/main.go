@@ -18,15 +18,25 @@ func main() {
 
 	r := gin.New()
 	r.Use(
-		ginmw.GinLoggerWithConfig(logger, ginmw.LoggerConfig{SkipPaths: []string{"/healthz"}}),
+		ginmw.GinLoggerWithConfig(logger, ginmw.LoggerConfig{
+			SkipPaths:           []string{"/healthz"},
+			SkipSuccessfulPaths: true,
+		}),
 		ginmw.GinRecovery(logger, true),
 	)
 
 	r.GET("/healthz", func(c *gin.Context) {
+		if c.Query("fail") == "true" {
+			c.String(http.StatusInternalServerError, "health check failed")
+			return
+		}
 		c.String(http.StatusOK, "ok")
 	})
 	r.GET("/hello", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "hello"})
+	})
+	r.GET("/bad-request", func(c *gin.Context) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 	})
 	r.GET("/panic", func(c *gin.Context) {
 		panic("demo panic")

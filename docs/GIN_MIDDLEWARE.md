@@ -13,6 +13,7 @@ This project provides an optional Gin middleware subpackage:
 ## LoggerConfig
 
 - `SkipPaths []string`: exact paths to skip logging.
+- `SkipSuccessfulPaths bool`: when `false` (default), matched `SkipPaths` are fully skipped for all status codes; when `true`, matched paths skip only `<400` responses and still log `4xx/5xx`.
 - `RequestIDHeader string`: request ID header key (default: `X-Request-ID`).
 - `TraceIDHeader string`: trace ID header key (default: `X-Trace-ID`, with W3C `traceparent` fallback).
 - `Message string`: request log message (default: `gin request`).
@@ -36,6 +37,21 @@ This project provides an optional Gin middleware subpackage:
 - `status >= 500` => `Error`
 - `status >= 400` => `Warn`
 - others => `Info`
+
+## Skip Rules
+
+By default, `SkipPaths` preserves the original behavior and skips matching paths before logging, regardless of the final response status.
+
+Use `SkipSuccessfulPaths: true` when you want quiet health-check or metrics logs but still need failed requests:
+
+```go
+r.Use(ginmw.GinLoggerWithConfig(logger, ginmw.LoggerConfig{
+	SkipPaths:           []string{"/healthz", "/metrics"},
+	SkipSuccessfulPaths: true,
+}))
+```
+
+With this config, `/healthz` returning `200` or `302` is skipped, while `/healthz` returning `404` or `500` is logged.
 
 ## Production Recommendation
 

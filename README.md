@@ -2,6 +2,8 @@
 
 A simple and easy-to-use logging library for Go, built on top of [zap](https://github.com/uber-go/zap).
 
+[中文文档](README.zh-CN.md)
+
 ## Features
 
 *   Multiple log levels (Debug, Info, Warn, Error, Panic).
@@ -160,7 +162,8 @@ func main() {
 	r := gin.New()
 	r.Use(
 		ginmw.GinLoggerWithConfig(logger, ginmw.LoggerConfig{
-			SkipPaths: []string{"/healthz"},
+			SkipPaths:           []string{"/healthz"},
+			SkipSuccessfulPaths: true,
 		}),
 		ginmw.GinRecovery(logger, true),
 	)
@@ -173,6 +176,8 @@ Middleware behavior:
 - Log level mapping: `5xx -> Error`, `4xx -> Warn`, others `Info`.
 - `GinRecovery`: recovers panic, logs panic info (and stack when enabled), returns HTTP 500.
 - `trace_id` is read from `X-Trace-ID` by default, with W3C `traceparent` fallback.
+- `SkipPaths` keeps its original behavior by default: matched paths are fully skipped.
+- `SkipSuccessfulPaths: true` changes `SkipPaths` to skip only `<400` responses while keeping `4xx/5xx` logs.
 
 See runnable demo:
 

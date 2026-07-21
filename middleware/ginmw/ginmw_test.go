@@ -158,17 +158,93 @@ func TestGinLoggerSkipPaths(t *testing.T) {
 	r := gin.New()
 	r.Use(GinLoggerWithConfig(log, LoggerConfig{SkipPaths: []string{"/healthz"}}))
 	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	r.GET("/healthz-fail", func(c *gin.Context) { c.String(http.StatusInternalServerError, "fail") })
 	r.GET("/api", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz-fail", nil))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api", nil))
+
+	entries := observed.FilterField(zap.String("path", "/healthz")).All()
+	if len(entries) != 0 {
+		t.Fatalf("expected /healthz to be skipped, got %d log entries", len(entries))
+	}
+
+	entries = observed.All()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 log entries, got %d", len(entries))
+	}
+	if entries[0].ContextMap()["path"] != "/healthz-fail" {
+		t.Fatalf("expected /healthz-fail log entry, got %#v", entries[0].ContextMap()["path"])
+	}
+	if entries[1].ContextMap()["path"] != "/api" {
+		t.Fatalf("expected /api log entry, got %#v", entries[1].ContextMap()["path"])
+	}
+}
+
+func TestGinLoggerSkipPathsKeepsOriginalBehaviorForFailures(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	log, observed := newObservedSugaredLogger(zapcore.DebugLevel)
+
+	r := gin.New()
+	r.Use(GinLoggerWithConfig(log, LoggerConfig{SkipPaths: []string{"/healthz"}}))
+	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusInternalServerError, "fail") })
+
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	entries := observed.All()
+	if len(entries) != 0 {
+		t.Fatalf("expected matched SkipPaths to preserve old behavior and skip failures, got %d log entries", len(entries))
+	}
+}
+
+func TestGinLoggerSkipSuccessfulPathsKeepsFailures(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	log, observed := newObservedSugaredLogger(zapcore.DebugLevel)
+
+	r := gin.New()
+	r.Use(GinLoggerWithConfig(log, LoggerConfig{
+		SkipPaths:           []string{"/healthz"},
+		SkipSuccessfulPaths: true,
+	}))
+	r.GET("/healthz", func(c *gin.Context) {
+		switch c.Query("status") {
+		case "302":
+			c.Redirect(http.StatusFound, "/healthz")
+		case "400":
+			c.String(http.StatusBadRequest, "bad")
+		case "500":
+			c.String(http.StatusInternalServerError, "error")
+		default:
+			c.String(http.StatusOK, "ok")
+		}
+	})
+	r.GET("/api", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz?status=302", nil))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz?status=400", nil))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz?status=500", nil))
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api", nil))
 
 	entries := observed.All()
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 log entries, got %d", len(entries))
 	}
-	if entries[0].ContextMap()["path"] != "/api" {
-		t.Fatalf("expected /api log entry, got %#v", entries[0].ContextMap()["path"])
+	if entries[0].ContextMap()["path"] != "/healthz?status=400" {
+		t.Fatalf("expected /healthz?status=400 log entry, got %#v", entries[0].ContextMap()["path"])
+	}
+	if entries[0].Level != zapcore.WarnLevel {
+		t.Fatalf("expected warn level for 400, got %s", entries[0].Level)
+	}
+	if entries[1].ContextMap()["path"] != "/healthz?status=500" {
+		t.Fatalf("expected /healthz?status=500 log entry, got %#v", entries[1].ContextMap()["path"])
+	}
+	if entries[1].Level != zapcore.ErrorLevel {
+		t.Fatalf("expected error level for 500, got %s", entries[1].Level)
+	}
+	if entries[2].ContextMap()["path"] != "/api" {
+		t.Fatalf("expected /api log entry, got %#v", entries[2].ContextMap()["path"])
 	}
 }
 
