@@ -15,6 +15,8 @@ import (
 type LoggerConfig struct {
 	// SkipPaths bypasses logging for exact path matches.
 	SkipPaths []string
+	// SkipSuccessfulRequests skips all responses below 400 for every path.
+	SkipSuccessfulRequests bool
 	// SkipSuccessfulPaths makes SkipPaths skip only responses below 400.
 	SkipSuccessfulPaths bool
 	// RequestIDHeader is the HTTP header key used to extract request ID.
@@ -66,6 +68,9 @@ func GinLoggerWithConfig(log *zap.SugaredLogger, cfg LoggerConfig) gin.HandlerFu
 
 		latency := time.Since(start)
 		status := c.Writer.Status()
+		if cfg.SkipSuccessfulRequests && status < http.StatusBadRequest {
+			return
+		}
 		if skipPath && cfg.SkipSuccessfulPaths && status < http.StatusBadRequest {
 			return
 		}

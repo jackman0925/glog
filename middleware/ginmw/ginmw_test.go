@@ -248,6 +248,40 @@ func TestGinLoggerSkipSuccessfulPathsKeepsFailures(t *testing.T) {
 	}
 }
 
+func TestGinLoggerSkipSuccessfulRequestsKeepsFailures(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	log, observed := newObservedSugaredLogger(zapcore.DebugLevel)
+
+	r := gin.New()
+	r.Use(GinLoggerWithConfig(log, LoggerConfig{SkipSuccessfulRequests: true}))
+	r.GET("/ok", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	r.GET("/redirect", func(c *gin.Context) { c.Redirect(http.StatusFound, "/ok") })
+	r.GET("/bad", func(c *gin.Context) { c.String(http.StatusBadRequest, "bad") })
+	r.GET("/err", func(c *gin.Context) { c.String(http.StatusInternalServerError, "err") })
+
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/ok", nil))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/redirect", nil))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/bad", nil))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/err", nil))
+
+	entries := observed.All()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 log entries, got %d", len(entries))
+	}
+	if entries[0].ContextMap()["path"] != "/bad" {
+		t.Fatalf("expected /bad log entry, got %#v", entries[0].ContextMap()["path"])
+	}
+	if entries[0].Level != zapcore.WarnLevel {
+		t.Fatalf("expected warn level for 400, got %s", entries[0].Level)
+	}
+	if entries[1].ContextMap()["path"] != "/err" {
+		t.Fatalf("expected /err log entry, got %#v", entries[1].ContextMap()["path"])
+	}
+	if entries[1].Level != zapcore.ErrorLevel {
+		t.Fatalf("expected error level for 500, got %s", entries[1].Level)
+	}
+}
+
 func TestGinRecovery(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	log, observed := newObservedSugaredLogger(zapcore.DebugLevel)
