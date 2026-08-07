@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.1.6] - 2026-08-07
+### Added
+- `LoggerConfig` now supports `SkipSuccessfulRequests` to globally skip `<400` request logs while preserving `4xx/5xx` logs.
+
+### Changed
+- Gin demo now uses `SkipSuccessfulRequests` to demonstrate global success-log suppression.
+
 ## [1.1.5] - 2026-07-21
 ### Added
 - `LoggerConfig` now supports `SkipSuccessfulPaths` to skip only successful matched paths while preserving `4xx/5xx` logs.

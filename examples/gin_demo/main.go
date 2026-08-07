@@ -19,8 +19,7 @@ func main() {
 	r := gin.New()
 	r.Use(
 		ginmw.GinLoggerWithConfig(logger, ginmw.LoggerConfig{
-			SkipPaths:           []string{"/healthz"},
-			SkipSuccessfulPaths: true,
+			SkipSuccessfulRequests: true,
 		}),
 		ginmw.GinRecovery(logger, true),
 	)

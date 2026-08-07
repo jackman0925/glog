@@ -106,8 +106,7 @@ func main() {
 	r := gin.New()
 	r.Use(
 		ginmw.GinLoggerWithConfig(logger, ginmw.LoggerConfig{
-			SkipPaths:           []string{"/healthz"},
-			SkipSuccessfulPaths: true,
+			SkipSuccessfulRequests: true,
 		}),
 		ginmw.GinRecovery(logger, true),
 	)
@@ -158,6 +157,21 @@ ginmw.LoggerConfig{
 - `/healthz` 返回 `200` 或 `302`：跳过日志。
 - `/healthz` 返回 `400` 或 `500`：保留日志。
 
+如果希望“全站只保留失败请求日志”，开启 `SkipSuccessfulRequests`：
+
+```go
+ginmw.LoggerConfig{
+	SkipSuccessfulRequests: true,
+}
+```
+
+此时：
+
+- 任意路径返回 `200` 或 `302`：跳过日志。
+- 任意路径返回 `400` 或 `500`：保留日志。
+
+`SkipPaths`、`SkipSuccessfulPaths`、`SkipSuccessfulRequests` 都是 Gin 中间件的 Go 代码配置，不会改变 `logger.yaml` 的结构。
+
 ## JSON 输出
 
 生产环境建议使用 JSON 输出，便于日志采集系统按字段查询：
@@ -203,4 +217,3 @@ go run ./examples/gin_demo
 - `GET /healthz?fail=true`
 - `GET /bad-request`
 - `GET /panic`
-

@@ -160,11 +160,11 @@ func main() {
 	defer logger.Sync()
 
 	r := gin.New()
-	r.Use(
-		ginmw.GinLoggerWithConfig(logger, ginmw.LoggerConfig{
-			SkipPaths:           []string{"/healthz"},
-			SkipSuccessfulPaths: true,
-		}),
+r.Use(
+	ginmw.GinLoggerWithConfig(logger, ginmw.LoggerConfig{
+		SkipPaths:           []string{"/healthz"},
+		SkipSuccessfulPaths: true,
+	}),
 		ginmw.GinRecovery(logger, true),
 	)
 }
@@ -178,6 +178,7 @@ Middleware behavior:
 - `trace_id` is read from `X-Trace-ID` by default, with W3C `traceparent` fallback.
 - `SkipPaths` keeps its original behavior by default: matched paths are fully skipped.
 - `SkipSuccessfulPaths: true` changes `SkipPaths` to skip only `<400` responses while keeping `4xx/5xx` logs.
+- `SkipSuccessfulRequests: true` globally skips all `<400` request logs and keeps `4xx/5xx` logs.
 
 See runnable demo:
 
@@ -205,3 +206,5 @@ The following options are available in the `logger.yaml` file:
     *   `compress`: Compress rotated log files (`true` or `false`).
 
 For production log collection, set `encoder: json` so every log line is structured JSON and request logs can be queried by fields such as `trace_id` and `request_id`.
+
+Gin middleware options such as `SkipPaths`, `SkipSuccessfulPaths`, and `SkipSuccessfulRequests` are configured in Go code through `ginmw.LoggerConfig`; they do not change the `logger.yaml` structure.
